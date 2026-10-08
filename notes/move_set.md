@@ -212,9 +212,7 @@ Un grande limite teorico del reticolo quadrato/cubico semplice (SC) è la **rest
 
 - **Risultato:** Su reticolo FCC, il tasso di accettazione delle *pull moves* sale drasticamente, la barriera di *jamming* sterico si riduce e la simulazione approssima molto meglio la flessibilità dello spazio continuo.
 
-# Scelta per il progetto
 
-Per il progetto ho scelto le semplici pull moves da abbinare all'algoritmo di campionamento REMC (vedi file samplings.md)
 
 ## Evita complessità inutili
 
@@ -267,3 +265,11 @@ Per un progetto universitario, lavorare con sequenze HP di lunghezza $N \in [20,
 - **Pull Moves + REMC** risolvono il blocco sterico in pochi secondi di calcolo su una CPU standard.
 
 - Ottieni un dataset di migliaia di strutture perfettamente etichettate senza dover complicare l'architettura.
+
+# Scelta per il progetto
+
+Per il progetto ho scelto le semplici pull moves da abbinare all'algoritmo di campionamento REMC (vedi file samplings.md)
+
+## Paper di riferimento
+
+**Lesh, N., Mitzenmacher, M., & Whitesides, S. (2003).** *A complete and effective move set for simplified protein folding.*
