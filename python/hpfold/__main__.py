@@ -5,6 +5,10 @@ import argparse
 from hpfold import dataset, gui, ml, simulation
 from hpfold.config import load_config
 
+# Maps each phase name accepted on the command line to the function that runs
+# it. Every function takes the loaded configuration as its only argument.
+# The functions are stored without being called (no parentheses): the chosen
+# one is invoked in main().
 PHASES = {
     "gui": gui.run,
     "simulate": simulation.run,
@@ -14,13 +18,36 @@ PHASES = {
 
 
 def main() -> None:
+
+    # ------------------------------------------------------------------
+    # Parser creation
+    # argparse is the standard module that parses arguments passed from the terminal
     parser = argparse.ArgumentParser(prog="hpfold", description=__doc__)
-    parser.add_argument("--config", required=True, help="file di configurazione TOML")
-    parser.add_argument("phase", choices=PHASES, help="fase da eseguire")
+
+    # Named option, made mandatory by `required=True`: path of the TOML file
+    # holding the configuration for the run.
+    parser.add_argument("--config", required=True, help="configuration file TOML")
+
+    # Positional argument: must be one of the keys of PHASES
+    parser.add_argument("phase", choices=PHASES, help="phase to execute")
+
+    # Read and validate the command line: the values end up in
     args = parser.parse_args()
 
+    # Load the configuration from TOML file and  passes it to the function of the phase
+    # Example: simulation.run(config)
     PHASES[args.phase](load_config(args.config))
 
+    # Example of running command:
+    # python3 -m hpfold --config ../config/default.toml simulate
+    #
+    # IN QUESTO MOMENTO POSSO ESEGUIRE LE DIVERSE FASI DEL PROGETTO
+    # SOLO SEPARATAMENTE
+    #
+    # SARÀ NECESSARIO UNIRE ALMENO LE PRIME 3 FASI IN UNA UNICA CHIAMATA
+    # ------------------------------------------------------------------
 
+# True only when this file is the one being executed (`python -m hpfold`),
+# not when it is imported: importing the module must not start the pipeline.
 if __name__ == "__main__":
     main()
