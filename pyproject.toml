@@ -1,0 +1,28 @@
+[build-system]
+requires = ["scikit-build-core>=0.10", "pybind11>=3.0"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "hpfold"
+version = "0.1.0"
+description = "REMC sampling of HP proteins on a 2D lattice and datasets for machine learning"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+]
+# TODO(phase 3): add an `ml` group with the chosen framework.
+
+[tool.scikit-build]
+minimum-version = "build-system.requires"
+cmake.build-type = "Release"
+build-dir = "build/{wheel_tag}"
+wheel.packages = ["python/hpfold"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

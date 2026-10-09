@@ -1,0 +1,15 @@
+# C++ build / Python package
+build/
+dist/
+*.egg-info/
+*.so
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# Simulation outputs (can be regenerated)
+data/output/*
+!data/output/.gitkeep

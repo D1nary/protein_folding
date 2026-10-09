@@ -1,0 +1,35 @@
+# Default configuration of the simulation.
+#
+# All parameters are read from this file: there are no hard-coded values in the
+# code. For a different experiment, copy the file and pass the copy with
+# --config.
+#
+# Relative paths are resolved against the directory the program is launched
+# from (the project root).
+
+[lattice]
+width = 8
+height = 8
+
+[protein]
+length = 16                     # N: must match the length of `sequence`
+sequence = "HPHPPHHPHPPHPHHP"   # example sequence (H = hydrophobic, P = polar)
+# Initial configuration drawn with the GUI (phase 0).
+initial_conformation = "data/input/initial_conformation.json"
+
+[remc]
+# Placeholder values: to be tuned in phase 1.
+n_replicas = 5      # M: number of replicas
+t_min = 0.5         # T_1: temperature of the coldest replica (k_B = 1)
+t_max = 2.0         # T_M: temperature of the hottest replica
+local_steps = 500   # phi: local Monte Carlo steps between two swap attempts
+n_cycles = 1000     # number of cycles (local sampling + swap)
+save_every = 10     # how many cycles between saves of the intermediate configurations
+seed = 42           # seed of the random number generator
+
+[output]
+samples_dir = "data/output/samples"   # intermediate configurations written by the C++ code
+dataset_dir = "data/output/dataset"   # labelled dataset (phase 2)
+
+# [ml]
+# Model and training parameters: to be defined in phase 3.
