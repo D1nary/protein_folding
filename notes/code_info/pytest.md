@@ -1,7 +1,5 @@
 **pytest** è il framework di test standard per Python: tu scrivi funzioni il cui nome inizia con `test_` e dentro usi dei normali `assert`; pytest le trova da solo, le esegue una per una e ti dice quali passano e quali falliscono (mostrando i valori che hanno fatto fallire l'`assert`).
 
-Non ho eseguito i test: quanto segue viene dalla lettura dei file.
-
 ## Come è collegato al progetto
 
 - **Installazione**: in [pyproject.toml](https://claude.ai/epitaxy/pyproject.toml) pytest è nel gruppo opzionale `dev`, quindi arriva solo con `pip install -e ".[dev]"`. Chi installa solo il pacchetto `hpfold` non se lo porta dietro.
@@ -15,7 +13,7 @@ C'è un solo file, [tests/test_smoke.py](https://claude.ai/epitaxy/tests/test_sm
 2. **`test_core_extension_is_importable`**: importa `hpfold._core`, l'estensione C++ compilata con pybind11, e verifica che esponga `run_remc`. Se la compilazione è fallita o il binding non è stato registrato, fallisce qui.
 3. **`test_default_config_loads`**: carica `config/default.toml` con `load_config` e verifica che ci siano le sezioni `lattice`, `protein`, `remc`, `output` e che `protein.length` coincida con la lunghezza della sequenza.
 
-Non ci sono ancora test sulla correttezza dell'algoritmo (energia, pull moves, scambi REMC).
+I test sulla correttezza dell'algoritmo di fase 1 sono in `tests/test_core.py` (energia, mosse VSHD e pull moves) e `tests/test_simulation.py` (REMC, riproducibilità, file di output).
 
 ## Come si usa
 

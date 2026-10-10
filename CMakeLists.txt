@@ -11,6 +11,7 @@ add_library(hp_core STATIC
     cpp/src/pull_moves.cpp
     cpp/src/remc.cpp
     cpp/src/sample_writer.cpp
+    cpp/src/vshd_moves.cpp
 )
 target_include_directories(hp_core PUBLIC cpp/include)
 target_compile_options(hp_core PRIVATE -Wall -Wextra)

@@ -5,14 +5,14 @@ Campionamento dello spazio delle conformazioni di una proteina nel modello HP
 etichettato di conformazioni native e decoy su cui addestrare un modello di
 machine learning.
 
-Stato attuale: **solo struttura del progetto**. La logica delle fasi non è
-ancora implementata (i file contengono scheletri e `TODO`).
+Stato attuale: **fasi 0 e 1 implementate**. Le fasi 2-3 non sono ancora
+implementate (i file contengono scheletri e `TODO`).
 
 ## Fasi
 
 | Fase | Contenuto | Dove |
 |---|---|---|
-| 0 | GUI per disegnare la configurazione iniziale | `python/hpfold/gui.py` |
+| 0 | GUI per disegnare la configurazione iniziale | `python/hpfold/gui.py`, `python/hpfold/conformation.py` |
 | 1 | Ricerca dello stato nativo con REMC | `cpp/`, `python/hpfold/simulation.py` |
 | 2 | Generazione del dataset (nativi + decoy) | `cpp/` (salvataggio), `python/hpfold/dataset.py` |
 | 3 | Addestramento del modello di ML | `python/hpfold/ml.py` |
@@ -26,8 +26,9 @@ protein_folding/
 ├── cpp/                      # nucleo C++ (namespace hp)
 │   ├── include/hp/
 │   │   ├── conformation.hpp  # modello HP: catena sul reticolo, energia
-│   │   ├── pull_moves.hpp    # set di mosse (pull moves)
-│   │   ├── remc.hpp          # Replica Exchange Monte Carlo
+│   │   ├── vshd_moves.hpp    # mosse VSHD (end, corner, crankshaft)
+│   │   ├── pull_moves.hpp    # pull moves
+│   │   ├── remc.hpp          # Replica Exchange Monte Carlo (REMC_m)
 │   │   └── sample_writer.hpp # salvataggio delle configurazioni intermedie
 │   ├── src/                  # implementazioni (.cpp) degli header
 │   └── bindings/
@@ -35,15 +36,20 @@ protein_folding/
 ├── python/hpfold/            # pacchetto Python che orchestra la pipeline
 │   ├── __main__.py           # python -m hpfold --config <file> <fase>
 │   ├── config.py             # lettura del file di configurazione
-│   ├── gui.py                # fase 0
+│   ├── conformation.py       # fase 0: logica (catena, validazione, JSON)
+│   ├── gui.py                # fase 0: finestra Tkinter
 │   ├── simulation.py         # fase 1 (chiama hpfold._core)
 │   ├── dataset.py            # fase 2
 │   └── ml.py                 # fase 3
 ├── tests/
-│   └── test_smoke.py         # l'estensione si importa, la config si legge
+│   ├── test_smoke.py         # l'estensione si importa, la config si legge
+│   ├── test_conformation.py  # logica della fase 0
+│   ├── test_gui.py           # parti della GUI che non aprono finestre
+│   ├── test_core.py          # nucleo C++: energia, mosse VSHD e pull
+│   └── test_simulation.py    # fase 1: REMC, riproducibilità, output
 ├── data/
 │   ├── input/                # configurazione iniziale disegnata con la GUI
-│   └── output/               # output delle simulazioni (non versionato)
+│   └── output/               # conformazione nativa, campioni (non versionato)
 ├── notes/                    # appunti teorici
 ├── CMakeLists.txt            # build del C++ e del modulo Python
 └── pyproject.toml            # dipendenze Python e backend di build
@@ -99,3 +105,79 @@ python -m hpfold --config config/default.toml train     # fase 3
 
 I percorsi relativi nel file di configurazione sono risolti rispetto alla
 directory da cui si lancia il comando (la radice del progetto).
+
+### Fase 0: conformazione iniziale
+
+All'avvio la GUI chiede se si vuole disegnare una nuova proteina:
+
+- **No**: viene salvata la proteina di default, cioè `protein.sequence` con una
+  forma generata automaticamente (catena a serpentina dall'angolo in alto a
+  sinistra).
+- **Yes**: si apre la griglia `lattice.width` × `lattice.height` e si procede in
+  due step.
+  1. **Disegno della catena.** Ogni click su un nodo aggiunge un residuo,
+     collegato al precedente. Il nodo deve essere libero e adiacente
+     (su/giù/sinistra/destra) all'ultimo residuo; il primo può andare ovunque.
+     "Undo last residue" e "Clear all" correggono il disegno. La
+     catena deve avere esattamente `protein.length` residui.
+  2. **Assegnazione H/P.** Si sceglie il tipo attivo (H o P) e si clicca sui
+     residui; un altro click cambia il tipo. Si può tornare allo step 1 per
+     correggere la forma.
+
+  "Save" si abilita quando tutti i residui hanno un tipo; dopo il salvataggio
+  la finestra si chiude da sola.
+
+In entrambi i casi il risultato è scritto in `protein.initial_conformation`
+(formato in `notes/code_info/initial_conformation.md`): è da questo file, e non
+da `protein.sequence`, che la fase 1 legge sequenza e coordinate. Colori e
+dimensioni iniziali della finestra si regolano nella sezione `[gui]` del TOML;
+ridimensionando la finestra, la griglia e i residui si adattano allo spazio
+disponibile.
+
+### Fase 1: ricerca della conformazione nativa (REMC)
+
+```bash
+python -m hpfold --config config/default.toml simulate
+```
+
+Parte dalla conformazione in `protein.initial_conformation` ed esegue il
+Replica Exchange Monte Carlo di Thachuk, Shmygelska e Hoos (2007) nella
+variante ibrida REMC_m, sul reticolo 2D `lattice.width` × `lattice.height`.
+Al termine stampa l'energia minima e salva la conformazione corrispondente in
+`output.native_conformation`, nello stesso formato del file di input con in
+più la chiave `energy`.
+
+Parametri, tutti nella sezione `[remc]` del TOML:
+
+| Parametro | Significato |
+|---|---|
+| `n_replicas` | numero di repliche (almeno 2) |
+| `t_min`, `t_max` | temperature della replica più fredda e più calda (`k_B = 1`) |
+| `local_steps` | passi Monte Carlo locali tra due tentativi di scambio |
+| `n_cycles` | numero di cicli (ricerca locale + scambi) |
+| `rho` | probabilità che un passo locale usi una pull move (altrimenti VSHD) |
+| `seed` | seme del generatore casuale |
+
+Come funziona:
+
+- **Energia**: −1 per ogni coppia di residui H adiacenti sul reticolo ma non
+  consecutivi nella catena.
+- **Temperature**: distribuite linearmente tra `t_min` e `t_max`. I valori di
+  default sono quelli del paper divisi per 1000.
+- **Passo locale**: si sceglie l'insieme di mosse (pull con probabilità `rho`,
+  altrimenti VSHD), poi un residuo a caso, poi una a caso tra le mosse
+  ammissibili su quel residuo; la mossa è accettata con il criterio di
+  Metropolis. Se sul residuo non c'è nessuna mossa ammissibile il passo lascia
+  la conformazione invariata.
+- **Reticolo finito**: una mossa che porterebbe un residuo fuori dalla griglia
+  non è ammissibile. La griglia va quindi tenuta ampia rispetto alla proteina.
+- **Scambi**: a ogni ciclo si propongono scambi tra repliche a temperature
+  vicine, alternando le coppie (1,2), (3,4), … e (2,3), (4,5), …
+- **Miglior conformazione**: aggiornata a ogni mossa accettata, non solo alla
+  fine della ricerca locale.
+- **Arresto**: dopo `n_cycles` cicli. Tutte le repliche partono dalla stessa
+  conformazione iniziale.
+
+A parità di `seed` (e di macchina e compilatore) la simulazione è
+riproducibile. `remc.save_every` e `output.samples_dir` non sono ancora usati:
+servono al salvataggio delle configurazioni intermedie, previsto per la fase 2.

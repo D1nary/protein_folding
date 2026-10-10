@@ -8,26 +8,41 @@
 # from (the project root).
 
 [lattice]
-width = 8
-height = 8
+width = 30
+height = 30
 
 [protein]
 length = 16                     # N: must match the length of `sequence`
-sequence = "HPHPPHHPHPPHPHHP"   # example sequence (H = hydrophobic, P = polar)
+sequence = "HPHPPHHPHPPHPHHH"   # example sequence (H = hydrophobic, P = polar)
 # Initial configuration drawn with the GUI (phase 0).
 initial_conformation = "data/input/initial_conformation.json"
 
+[gui]
+# Appearance of the drawing window (phase 0).
+# Sizes when the window opens: resizing the window rescales the grid and the
+# residues, keeping the same proportion between the two.
+cell_size = 60              # distance in pixels between two adjacent nodes of the grid
+residue_radius = 16         # radius in pixels of the circle drawn for a residue
+color_untyped = "#9e9e9e"   # residue whose type has not been assigned yet
+color_h = "#d62728"         # hydrophobic residue
+color_p = "#1f77b4"         # polar residue
+
 [remc]
-# Placeholder values: to be tuned in phase 1.
+# Replica Exchange Monte Carlo (phase 1), variant REMC_m of Thachuk et al.
+# (2007). Values of the paper for the 2D case; the temperatures are the ones
+# of the paper divided by 1000.
 n_replicas = 5      # M: number of replicas
-t_min = 0.5         # T_1: temperature of the coldest replica (k_B = 1)
-t_max = 2.0         # T_M: temperature of the hottest replica
+t_min = 0.160        # T_1: temperature of the coldest replica (k_B = 1)
+t_max = 0.220        # T_M: temperature of the hottest replica
 local_steps = 500   # phi: local Monte Carlo steps between two swap attempts
-n_cycles = 1000     # number of cycles (local sampling + swap)
+n_cycles = 10000     # number of cycles (local sampling + swap)
+rho = 0.4           # probability that a local step uses a pull move (otherwise VSHD)
 save_every = 10     # how many cycles between saves of the intermediate configurations
 seed = 42           # seed of the random number generator
 
 [output]
+# Lowest-energy conformation found by the REMC (phase 1).
+native_conformation = "data/output/native_conformation.json"
 samples_dir = "data/output/samples"   # intermediate configurations written by the C++ code
 dataset_dir = "data/output/dataset"   # labelled dataset (phase 2)
 
