@@ -94,6 +94,16 @@ Verifica:
 pytest
 ```
 
+Diagnostica C++ nell'editor (clangd, usato ad esempio da Zed): clangd ha
+bisogno di `compile_commands.json` per conoscere le directory di include. Il
+file `.clangd` lo cerca in `build/clangd`, dove va generato una volta (e di
+nuovo se si cancella `build/` o si aggiunge un file `.cpp`):
+
+```bash
+cmake -S . -B build/clangd -DPython_EXECUTABLE="$PWD/.venv/bin/python" \
+      -Dpybind11_DIR="$(.venv/bin/python -m pybind11 --cmakedir)"
+```
+
 ## Uso
 
 ```bash

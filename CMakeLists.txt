@@ -4,6 +4,8 @@ project(hpfold LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+# Writes compile_commands.json, read by clangd (editor diagnostics).
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Simulation logic, independent of Python.
 add_library(hp_core STATIC

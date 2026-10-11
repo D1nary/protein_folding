@@ -12,6 +12,7 @@ File:
 - `STRUTTURA.md`: Questo file.
 - `pyproject.toml`: Definisce il pacchetto Python `hpfold`: nome, dipendenze (`numpy`, `pytest`) e sistema di build (scikit-build-core + pybind11). È il file che `pip install -e .` legge.
 - `CMakeLists.txt`: Istruzioni di compilazione del C++: elenca i file `.cpp` da compilare e produce il modulo Python `hpfold._core`. Viene eseguito da `pip install`, non a mano.
+- `.clangd`: Indica a clangd (il language server C++ dell'editor) dove trovare `compile_commands.json`, cioè in `build/clangd`. Serve solo alla diagnostica nell'editor, non alla compilazione.
 
 
 
