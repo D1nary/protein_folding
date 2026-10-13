@@ -10,6 +10,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # Simulation logic, independent of Python.
 add_library(hp_core STATIC
     cpp/src/conformation.cpp
+    cpp/src/exact.cpp
     cpp/src/pull_moves.cpp
     cpp/src/remc.cpp
     cpp/src/sample_writer.cpp

@@ -2,7 +2,7 @@
 
 import argparse
 
-from hpfold import dataset, gui, ml, simulation
+from hpfold import dataset, gui, ml, simulation, verification
 from hpfold.config import load_config
 
 # Maps each phase name accepted on the command line to the function that runs
@@ -12,6 +12,7 @@ from hpfold.config import load_config
 PHASES = {
     "gui": gui.run,
     "simulate": simulation.run,
+    "verify": verification.run,
     "dataset": dataset.run,
     "train": ml.run,
 }

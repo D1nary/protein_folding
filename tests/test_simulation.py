@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from hpfold import _core, simulation
+from hpfold import _core, simulation, verification
 from hpfold.conformation import load_conformation, save_conformation, validate_conformation
 
 SEQUENCE = "HPHPPHHPHPPHPHHH"
@@ -91,6 +91,39 @@ def test_remc_finds_the_ground_state():
     assert result.best_energy == GROUND_STATE_ENERGY
 
 
+def test_exact_enumeration_on_known_sequences():
+    # Figure 1 of Thachuk et al. (2007) and two standard 2D benchmarks.
+    assert _core.exact_ground_state("HPPH", WIDTH, HEIGHT).energy == -1
+    assert _core.exact_ground_state(SEQUENCE, WIDTH, HEIGHT).energy == GROUND_STATE_ENERGY
+    assert _core.exact_ground_state("HPHPPHHPHPPHPHHPPHPH", WIDTH, HEIGHT).energy == -9
+    # No H-H contact is possible without H residues, or with a single one.
+    assert _core.exact_ground_state("PPPPPP", WIDTH, HEIGHT).energy == 0
+    assert _core.exact_ground_state("H", WIDTH, HEIGHT).energy == 0
+
+
+def test_exact_conformation_is_valid_and_consistent():
+    result = _core.exact_ground_state(SEQUENCE, WIDTH, HEIGHT)
+    validate_conformation(SEQUENCE, result.best.coordinates, WIDTH, HEIGHT)
+    assert result.best.energy() == result.energy
+
+
+def test_exact_enumeration_respects_the_lattice():
+    # In a 4x1 lattice the only conformation is the straight chain; a 2x2
+    # square lets the two ends touch.
+    assert _core.exact_ground_state("HPPH", 4, 1).energy == 0
+    assert _core.exact_ground_state("HPPH", 1, 4).energy == 0
+    assert _core.exact_ground_state("HPPH", 2, 2).energy == -1
+    # A wide and low lattice: the walk is rotated to fit.
+    result = _core.exact_ground_state(SEQUENCE, 8, 3)
+    validate_conformation(SEQUENCE, result.best.coordinates, 8, 3)
+    assert result.energy >= GROUND_STATE_ENERGY
+
+    with pytest.raises(ValueError):
+        _core.exact_ground_state("HPPH", 3, 1)  # the chain does not fit
+    with pytest.raises(ValueError):
+        _core.exact_ground_state("HXPH", WIDTH, HEIGHT)
+
+
 def test_run_saves_the_best_conformation(tmp_path, capsys):
     initial_path = tmp_path / "initial.json"
     output_path = tmp_path / "out" / "native.json"
@@ -115,4 +148,41 @@ def test_run_saves_the_best_conformation(tmp_path, capsys):
 
     energy = json.loads(output_path.read_text())["energy"]
     assert energy == _core.Conformation(sequence, coordinates, WIDTH, HEIGHT).energy() < 0
-    assert f"Minimum energy: {energy}" in capsys.readouterr().out
+    output = capsys.readouterr().out
+    assert f"Minimum energy: {energy}" in output
+    # The exact enumeration is a separate phase: the simulation does not run it.
+    assert "Exact minimum" not in output
+
+
+def verification_config(tmp_path, coordinates, max_length=16):
+    path = tmp_path / "native.json"
+    save_conformation(path, SEQUENCE, coordinates)
+    return {
+        "lattice": {"width": WIDTH, "height": HEIGHT},
+        "exact": {"max_length": max_length},
+        "output": {"native_conformation": str(path)},
+    }
+
+
+def test_verify_recognises_the_ground_state(tmp_path, capsys):
+    ground_state = _core.exact_ground_state(SEQUENCE, WIDTH, HEIGHT).best
+    verification.run(verification_config(tmp_path, ground_state.coordinates))
+
+    output = capsys.readouterr().out
+    assert f"REMC energy:    {GROUND_STATE_ENERGY}" in output
+    assert f"Exact minimum:  {GROUND_STATE_ENERGY} -> the REMC found the ground state" in output
+
+
+def test_verify_reports_a_conformation_above_the_ground_state(tmp_path, capsys):
+    # The straight chain has no contacts.
+    verification.run(verification_config(tmp_path, initial_conformation().coordinates))
+
+    output = capsys.readouterr().out
+    assert "REMC energy:    0" in output
+    assert f"Exact minimum:  {GROUND_STATE_ENERGY} -> the REMC did NOT reach" in output
+
+
+def test_verify_skips_chains_longer_than_max_length(tmp_path, capsys):
+    config = verification_config(tmp_path, initial_conformation().coordinates, max_length=15)
+    verification.run(config)
+    assert "Exact minimum:  not computed" in capsys.readouterr().out

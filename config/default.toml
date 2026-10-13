@@ -40,6 +40,13 @@ rho = 0.4           # probability that a local step uses a pull move (otherwise 
 save_every = 10     # how many cycles between saves of the intermediate configurations
 seed = 42           # seed of the random number generator
 
+[exact]
+# Check of the REMC result, run on request with the `verify` phase: the true
+# minimum energy is computed by enumerating all the conformations of the
+# sequence. The cost grows exponentially with the length, so longer chains are
+# not checked.
+max_length = 25     # longest chain verified by exact enumeration
+
 [output]
 # Lowest-energy conformation found by the REMC (phase 1).
 native_conformation = "data/output/native_conformation.json"

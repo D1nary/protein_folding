@@ -334,7 +334,6 @@ Tuttavia, Thachuk et al. usano $n_A/n_B \approx 1$ ovvero,  viene adottata la re
 
    Selezionando prima il residuo $k$ in modo uniforme ($1/n$), si garantisce che **ogni amminoacido della sequenza riceva esattamente la stessa priorità temporale di tentativo**, indipendentemente da quanto sia libero o incastrato rispetto ai suoi vicini.
 
-   
    Se l'algoritmo scegliesse la mossa estraendola direttamente dal catalogo di **tutte le mosse globalmente possibili** sulla proteina:
 
    - In una conformazione aperta $c$, ci sarebbero ad esempio $N(c) = 50$ mosse totali disponibili $\implies q(c \to c') = \frac{1}{50}$.
@@ -349,7 +348,6 @@ Tuttavia, Thachuk et al. usano $n_A/n_B \approx 1$ ovvero,  viene adottata la re
 
    Un valore ben lontano da $1$. Ignorare questo fattore e usare Metropolis semplice farebbe fallire la correttezza teorica del campionamento.
 
-   
    Nel codice dell'articolo, la probabilità di proporre una mossa viene scomposta in due parti:
 
    $$
@@ -377,3 +375,156 @@ Per la prima fase del progetto (ricerca dello stato nativo e generazione del dat
 - Mantiene un'elevata efficienza nel superare le barriere energetiche grazie al Replica Exchange.
 
 - Genera un dataset vario e bilanciato, perfetto per il successivo addestramento del modello di Machine Learning.
+
+# Algoritmo di Ricerca Esatta (Branch and Bound) per lo Stato Nativo
+
+Per una proteina con un numero di residui minore di 30 può essere trovata la conformazione spaziale corrispondete allo stato nativo di una proteina e il suo valore di energia minima.
+
+L'algoritmo che esegue questo calcolo è esposto di seguito.
+
+Utilizza una tecnica di **Backtracking** combinata con **Branch and Bound** e **riduzione delle simmetrie** per potare i rami non promettenti dello spazio di ricerca.
+
+## 1. Fase di Inizializzazione e Pre-calcolo
+
+Prima di avviare la ricerca ricorsiva, l'algoritmo prepara le strutture dati e i limiti teorici:
+
+- **Griglia di lavoro:** Viene creata una griglia quadrata di dimensione $(2N + 1) \times (2N + 1)$, con tutti i nodi inizializzati a libero (`-1`). Posizionando il primo residuo al centro, si garantisce che la catena non possa mai uscire dai bordi.
+
+- **Pre-calcolo del Bound Upper (`max_future_contacts_`):** Per ogni posizione $i$, si calcola il massimo numero teorico di contatti che i residui restanti dal passo $i$ a $N-1$ potrebbero formare:
+
+  - Ogni residuo interno $H$ ha al massimo 2 vicini liberi potenziali (dei 4 vicini topologici, 2 sono occupati dai legami peptidici covalenti precedente e successivo).
+
+  - L'ultimo residuo $H$ della catena ha al massimo 3 vicini liberi potenziali.
+
+  - I residui $P$ contribuiscono con 0 contatti.
+
+- **Best Score:** Viene inizializzato a `-1` (nessuna configurazione valida ancora trovata).
+
+Alla fine di questa sezione è riportato un approfondimento per comprendere meglio `max_future_contacts_`
+
+## 2. Breaking della Simmetria (Fissaggio Iniziale)
+
+Per evitare di esplorare conformazioni equivalenti per rotazione o riflessione, si applicano due vincoli rigidi sui primi passi:
+
+1. **Rotazione:** Il **residuo 0** viene fissato al centro della griglia. Il **residuo 1** viene forzato ad andare **sempre a destra**. Questo riduce di un fattore 4 lo spazio delle soluzioni eliminando le rotazioni rigide.
+
+2. **Riflessione:** Finché la catena rimane interamente distesa lungo un solo asse orizzontale, la prima svolta viene **forzata verso l'alto**, eliminando l'esplorazione della metà speculare del reticolo (verso il basso).
+
+## 3. Algoritmo di Esplorazione e Potatura (Branch and Bound)
+
+L'estensione della catena per il residuo corrente $i$ sul nodo candidato procede seguendo una sequenza controllata di verifiche:
+
+### A. Potatura Geometrica (Bounding Box)
+
+Si calcolano le dimensioni del rettangolo minimo che circoscrive la catena. Se le sue dimensioni superano i vincoli del reticolo reale di simulazione (`width x height`), sia in orientamento originale che ruotato di 90°, **il ramo viene potato immediatamente**. Questo vincolo non fa riferimento alle dimensioni della griglia su cui stiamo cercando il minimo con QUESTO algoritmo ma alle dimensioni della simulazione REMC. In questo modo si escudono configurazioni che uscirebbero dalla simulazione vera e propria. 
+
+### B. Calcolo dei Contatti Locali
+
+Se il residuo $i$ è di tipo $H$, si contano i vicini $H$ già posizionati sulla griglia adiacenti a esso (escludendo il residuo $i-1$, poiché rappresenta un legame covalente e non un contatto non covalente). I nuovi contatti vengono aggiunti al totale parziale.
+
+### C. Potatura tramite Bound energetico (Branch & Bound)
+
+Si applica la condizione di potatura principale:
+
+$$
+\text{Contatti Parziali} + \text{max\_future\_contacts\_}[i+1] \le \text{Miglior Numero di Contatti Trovato}
+$$
+
+Se la somma dei contatti attuali più il massimo contributo teorico dei residui rimanenti non supera il miglior risultato ottenuto fino a quel momento, **il ramo viene abbandonato**, poiché non potrà mai produrre un nuovo minimo globale.
+
+## 4. Passo Ricorsivo e Backtracking
+
+Se la posizione supera tutti i controlli:
+
+1. Il nodo viene marcato come **occupato** dal residuo $i$.
+
+2. Per ciascuna delle 4 direzioni adiacenti, se il nodo è libero, l'algoritmo viene chiamato ricorsivamente per il residuo $i+1$ (il vincolo di vicini liberi garantisce la proprietà di *Self-Avoiding Walk*).
+
+3. **Backtracking:** Completata l'esplorazione dei vicini, il nodo viene ripristinato allo stato **libero** (`-1`) prima di ritornare al livello ricorsivo precedente.
+
+## 5. Aggiornamento dello Stato Nativo e Conclusione
+
+- **Raggiungimento della catena completa:** Quando viene piazzato l'ultimo residuo ($i = N-1$), se i contatti totali superano il record corrente (`Best Score`), la conformazione e la sua Bounding Box vengono salvate come **nuovo stato nativo parziale**. L'incremento del `Best Score` rende immediatamente più severo il criterio di potatura (Step 3C) per il resto della ricerca.
+
+- **Fine della ricerca:** Al termine dell'esplorazione di tutti i rami validi, la struttura nativa finale viene traslata con origine nell'angolo $(0,0)$ della griglia (ed eventualmente ruotata) e viene restituito il valore di energia ottimale:
+
+  $$
+  E_{native} = -\text{Contatti}_{max}
+  $$
+
+## Esempio Tracciato: Sequenza `HPPH`
+
+- **Pre-calcolo Bounds:** `max_future_contacts_ = [5, 3, 3, 3, 0]`
+
+- **Inizializzazione:**
+
+  - Residuo 0 ($H$): posizionato al centro $(0,0)$.
+
+  - Residuo 1 ($P$): posizionato a destra $(1,0)$.
+
+### Tracciamento dei rami per i residui 2 ($P$) e 3 ($H$):
+
+| **Posizione Residuo 2 (P)** | **Posizione Residuo 3 (H)**           | **Contatti H−H** | **Esito**                                                       |
+| --------------------------- | ------------------------------------- | ---------------- | --------------------------------------------------------------- |
+| **Destra** $(2,0)$          | **Destra** $(3,0)$                    | **0**            | Prima struttura completa valida. `Miglior Score = 0`            |
+| **Destra** $(2,0)$          | **Alto** $(2,1)$                      | **0**            | Non migliora lo score ($0 \le 0$). Scartata.                    |
+| **Alto** $(1,1)$            | **Sinistra** $(0,1)$ *(sopra $H_0$)*  | **1**            | **Nuovo minimo!** $H_3$ adiacente ad $H_0$. `Miglior Score = 1` |
+| **Alto** $(1,1)$            | **Alto** $(1,2)$ / **Destra** $(2,1)$ | **0**            | Non supera il bound ($0 \le 1$). Scartati.                      |
+| **Basso** $(1,-1)$          | *Non esplorato*                       | —                | **Saltato per simmetria** (prima svolta in basso).              |
+
+**Risultato finale:** Conformazione a "C" o quadrato chiuso, **1 contatto $H-H$**, **Energia $E = -1$**.
+
+---
+
+**Approfondimento `max_future_contacts_`**
+
+È la risposta alla domanda: **"nel caso più fortunato possibile, quanti contatti possono ancora aggiungere i residui che devo ancora piazzare?"**
+
+
+Ogni residuo ha 4 nodi vicini. Uno è occupato dal residuo precedente e uno dal successivo, quindi ne restano al massimo 2 per i contatti (3 per l'ultimo, che non ha un successivo). Un P non forma mai contatti. Quindi ogni residuo "vale":
+
+- H in mezzo alla catena: 2
+- H in ultima posizione: 3
+- P: 0
+
+`max_future_contacts_[i]` è la somma di questi valori dal residuo `i` fino alla fine.
+
+
+
+
+
+## Esempio: `HPHHPP`
+
+| Indice `i`                | 0   | 1   | 2   | 3   | 4   | 5   |
+| ------------------------- | --- | --- | --- | --- | --- | --- |
+| Residuo                   | H   | P   | H   | H   | P   | P   |
+| Vale                      | 2   | 0   | 2   | 2   | 0   | 0   |
+| `max_future_contacts_[i]` | 6   | 4   | 4   | 2   | 0   | 0   |
+
+Ad esempio `max_future_contacts_[2] = 2 + 2 + 0 + 0 = 4`: da lì in poi restano due H, che al massimo danno 2 contatti ciascuno.
+
+
+A cosa serve?
+
+Supponiamo che la ricerca abbia già trovato un cammino completo con 1 contatto (`migliore = 1`) e stia esplorando un altro ramo.
+
+- **Ho appena piazzato il residuo 2, con 0 contatti finora.** I residui rimanenti (3, 4, 5) possono aggiungere al massimo `max_future_contacts_[3] = 2`. Potrei arrivare a `0 + 2 = 2`, che è meglio di 1: **continuo**.
+- **Ho appena piazzato il residuo 3, ancora con 0 contatti.** I residui rimanenti (4, 5) sono due P: `max_future_contacts_[4] = 0`. Arriverei al massimo a `0 + 0 = 0`, che non supera 1: **abbandono il ramo** senza provare tutte le posizioni dei due P.
+
+**Come mai il primo residuo H può avere al massimo due contatatti e non 3 visto che è un estremo?**
+
+Perché il residuo 0 possa formare 3 contatti $H-H$, bisognerebbe riempire tutte e 3 le posizioni libere rimaste attorno a esso con altri residui di tipo $H$.
+
+Tuttavia, la catena è una linea continua e auto-evitante (*Self-Avoiding Walk*):
+
+1. La catena parte dal residuo 0, va al residuo 1 e prosegue per la sua strada.
+
+2. Per occupare la posizione **a sinistra** del residuo 0, la catena deve prima fare una curva e "girare intorno".
+
+3. Per occupare la posizione **sopra** il residuo 0, deve fare un altro giro.
+
+4. Per occupare la posizione **sotto** il residuo 0, la catena **dovrebbe chiudere il cerchio**.
+
+Ma se la catena occupa il terzo vicino (chiudendo completamente il residuo 0), la punta della catena rimane **intrappolata dentro una cella senza uscite**, oppure la catena stessa si interrompe perché non può attraversare se stessa.
+
+---

@@ -4,6 +4,7 @@
 #include <pybind11/stl.h>
 
 #include "hp/conformation.hpp"
+#include "hp/exact.hpp"
 #include "hp/pull_moves.hpp"
 #include "hp/remc.hpp"
 #include "hp/vshd_moves.hpp"
@@ -67,4 +68,14 @@ PYBIND11_MODULE(_core, m) {
           "Temperatures of the replicas, linearly spaced between t_min and t_max.");
     m.def("run_remc", &hp::run_remc, py::arg("initial"), py::arg("params"),
           "Runs the REMC simulation starting all the replicas from `initial`.");
+
+    py::class_<hp::ExactResult>(m, "ExactResult")
+        .def_readonly("best", &hp::ExactResult::best)
+        .def_readonly("energy", &hp::ExactResult::energy)
+        .def_readonly("explored_nodes", &hp::ExactResult::explored_nodes);
+
+    m.def("exact_ground_state", &hp::exact_ground_state, py::arg("sequence"),
+          py::arg("width"), py::arg("height"),
+          "Exact minimum energy of a short sequence, by exhaustive enumeration of the "
+          "self-avoiding walks that fit in the lattice.");
 }

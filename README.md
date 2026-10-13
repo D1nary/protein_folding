@@ -109,6 +109,7 @@ cmake -S . -B build/clangd -DPython_EXECUTABLE="$PWD/.venv/bin/python" \
 ```bash
 python -m hpfold --config config/default.toml gui       # fase 0
 python -m hpfold --config config/default.toml simulate  # fase 1
+python -m hpfold --config config/default.toml verify    # verifica della fase 1 (facoltativa)
 python -m hpfold --config config/default.toml dataset   # fase 2
 python -m hpfold --config config/default.toml train     # fase 3
 ```
@@ -191,3 +192,20 @@ Come funziona:
 A parità di `seed` (e di macchina e compilatore) la simulazione è
 riproducibile. `remc.save_every` e `output.samples_dir` non sono ancora usati:
 servono al salvataggio delle configurazioni intermedie, previsto per la fase 2.
+
+### Verifica della fase 1: enumerazione esatta
+
+```bash
+python -m hpfold --config config/default.toml verify
+```
+
+Il REMC è un metodo stocastico: restituisce l'energia più bassa tra quelle
+visitate, senza garanzia che sia il minimo. Questo comando, da lanciare dopo
+`simulate`, legge la conformazione in `output.native_conformation` e ne
+confronta l'energia con il minimo esatto della sequenza, calcolato enumerando
+tutte le conformazioni che entrano nel reticolo (ricerca in profondità con
+branch and bound). Non fa parte della simulazione: viene eseguito solo quando
+lo si richiede.
+
+Il costo cresce esponenzialmente con la lunghezza della catena, quindi le
+sequenze più lunghe di `exact.max_length` non vengono verificate.

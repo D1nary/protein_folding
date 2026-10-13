@@ -22,7 +22,7 @@ Contiene i file di configurazione. Tutti i parametri della simulazione stanno qu
 
 File:
 
-- `default.toml`: Parametri con i valori di default: dimensioni della griglia, lunghezza e sequenza della proteina di default, aspetto della GUI, parametri REMC (repliche, temperature, passi, `rho`, `seed`), percorsi di input e output. Per un esperimento diverso si copia questo file e si passa la copia con `--config`.
+- `default.toml`: Parametri con i valori di default: dimensioni della griglia, lunghezza e sequenza della proteina di default, aspetto della GUI, parametri REMC (repliche, temperature, passi, `rho`, `seed`), lunghezza massima verificata con l'enumerazione esatta, percorsi di input e output. Per un esperimento diverso si copia questo file e si passa la copia con `--config`.
 
 ## `cpp/`
 
@@ -41,6 +41,7 @@ File:
 - `vshd_moves.hpp`: Mosse VSHD: end move, corner move e crankshaft. `vshd_moves(conformazione, k)` restituisce le mosse ammissibili sul residuo `k`.
 - `pull_moves.hpp`: Pull moves di Lesh et al., sui residui interni (in entrambe le direzioni) e sui due estremi. `pull_moves(conformazione, k)` restituisce le mosse ammissibili sul residuo `k`.
 - `remc.hpp`: Algoritmo Replica Exchange Monte Carlo, variante ibrida REMC_m: parametri (`RemcParams`), risultato (`RemcResult`), scala lineare delle temperature e `run_remc`, con ricerca locale Metropolis e scambi tra repliche vicine.
+- `exact.hpp`: Enumerazione esatta: `exact_ground_state(sequenza, larghezza, altezza)` calcola la vera energia minima di una sequenza corta visitando tutte le camminate autoevitanti (ricerca in profondità con branch and bound). Serve a verificare il minimo trovato dal REMC.
 - `sample_writer.hpp`: Salvataggio su file delle configurazioni visitate durante la simulazione (non ancora implementato).
 
 ### `cpp/src/`
@@ -48,7 +49,7 @@ File:
 Implementazioni (`.cpp`): un file per ogni header di `cpp/include/hp/`, con lo
 stesso nome, che contiene il codice vero e proprio di quel componente
 (`conformation.cpp`, `vshd_moves.cpp`, `pull_moves.cpp`, `remc.cpp`,
-`sample_writer.cpp`).
+`exact.cpp`, `sample_writer.cpp`).
 
 ### `cpp/bindings/`
 
@@ -56,7 +57,7 @@ Collegamento tra C++ e Python.
 
 File:
 
-- `bindings.cpp`: Wrapper pybind11: elenca le funzioni e le classi C++ da rendere chiamabili da Python, sotto forma di modulo `hpfold._core`. Espone `Conformation`, `vshd_moves`, `pull_moves`, `RemcParams`, `RemcResult`, `temperature_ladder` e `run_remc`.
+- `bindings.cpp`: Wrapper pybind11: elenca le funzioni e le classi C++ da rendere chiamabili da Python, sotto forma di modulo `hpfold._core`. Espone `Conformation`, `vshd_moves`, `pull_moves`, `RemcParams`, `RemcResult`, `temperature_ladder`, `run_remc`, `ExactResult` e `exact_ground_state`.
 
 ## `python/hpfold/`
 
@@ -71,6 +72,7 @@ File:
 - `conformation.py`: Logica della fase 0, senza codice grafico: stato della catena in costruzione, validazione delle mosse, conformazione di default e lettura/scrittura del file JSON (usata anche dalla fase 1 per leggere l'input e scrivere il risultato).
 - `gui.py`: Fase 0: finestra Tkinter per disegnare a mano la configurazione iniziale. Contiene solo l'interfaccia e usa `conformation.py` per tutto il resto.
 - `simulation.py`: Fase 1: legge la conformazione iniziale, costruisce i parametri dal file di configurazione, avvia la simulazione REMC chiamando il codice C++ (`hpfold._core`) e salva la conformazione a energia minima.
+- `verification.py`: Verifica della fase 1, eseguita solo su richiesta (`verify`): legge la conformazione salvata dal REMC e ne confronta l'energia con il minimo esatto calcolato per enumerazione, se la catena non supera `exact.max_length`.
 - `dataset.py`: Fase 2: costruisce il dataset etichettato (conformazioni native e decoy).
 - `ml.py`: Fase 3: addestramento del modello di machine learning.
 
@@ -84,7 +86,7 @@ File:
 - `test_conformation.py`: Logica della fase 0: mosse valide e non valide, annullamento, tipi H/P, conformazione di default, file JSON.
 - `test_gui.py`: Parti di `gui.py` che non richiedono una finestra: conversione pixel/nodo e salvataggio della proteina di default.
 - `test_core.py`: Nucleo C++: calcolo dell'energia, mosse VSHD e pull move su casi costruiti a mano, e validità di ogni mossa (catena connessa, autoevitante, dentro il reticolo) lungo una camminata casuale.
-- `test_simulation.py`: Fase 1: scala delle temperature, parametri non validi, riproducibilità a parità di `seed`, raggiungimento dell'energia minima e file di output.
+- `test_simulation.py`: Fase 1: scala delle temperature, parametri non validi, riproducibilità a parità di `seed`, raggiungimento dell'energia minima, file di output, enumerazione esatta e fase `verify`.
 
 ## `data/`
 
