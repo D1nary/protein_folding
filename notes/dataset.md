@@ -126,8 +126,6 @@ Come mai avere molteplici descrizioni per la stessa forma geometrica di una prot
 
 **Incapacità di identificare e deduplicare gli stati:** Per costruire il grafo delle mosse, calcolare la distanza minima dallo stato nativo tramite la ricerca in ampiezza (BFS) e pulire le traiettorie dai cicli inutili, il sistema deve poter verificare istantaneamente se due conformazioni rappresentano lo stesso stato fisico. Se la stessa forma generasse descrizioni diverse (ad esempio a causa di traslazioni sulla griglia, rotazioni o riflessioni speculari), il programma le tratterebbe come stati distinti, fallendo nel riconoscere i duplicati e alterando il calcolo dei percorsi ottimi.
 
-
-
 Ma se non vogliamo avere duplicati (rotazioni o simili per la stessa configurazione) come mai successivamente applicamo l'**augmentation del dataset**?
 L'augmentation non contraddice la necessità di evitare duplicati, poiché viene applicata esclusivamente **al volo durante l'addestramento (in memoria)** e non durante la costruzione o il salvataggio del dataset su disco.
 Sul disco, ogni conformazione viene memorizzata una sola volta in forma canonica per garantire l'efficienza degli algoritmi di calcolo del grafo, la pulizia delle traiettorie e la deduplicazione.
@@ -145,8 +143,6 @@ L'augmentation risolve questo problema al momento del caricamento tramite i segu
 In questo modo, la memorizzazione univoca su disco protegge la correttezza del grafo e del calcolo dell'oracolo, mentre l'augmentation in memoria forza la rete neurale a imparare l'invarianza speculare senza dover raddoppiare lo spazio di archiviazione.
 
 ---
-
-
 
 ### 5.2. I Turni (Rappresentazione Relativa)
 
@@ -236,7 +232,15 @@ L'adozione degli **slot** risolve questa discrepanza creando uno spazio delle az
 
 ### 6.2 I tipi di mossa
 
-Ogni slot è una coppia **(residuo, tipo di mossa)**. I tipi sono definiti rispetto alla catena, non con direzioni assolute come "su" o "giù": "sinistra" e "destra" sono sempre riferite a un legame della catena. In questo modo una rotazione della griglia non cambia il nome di una mossa, e una riflessione si limita a scambiare sinistra e destra.
+Ogni slot è una coppia **(residuo, tipo di mossa)**. 
+
+Si vuole analizzare nel dettaglio quali sono i tipi di mossa che, combinati con ciascun residuo della catena, vanno a comporre i singoli slot dello spazio delle azioni.
+
+Il concetto fondamentale di questo punto è che le mosse **non sono definite tramite direzioni assolute della griglia** (come "su", "giù", "destra", "sinistra"), bensì **in modo relativo rispetto all'orientamento locale della catena proteica**. Termini come "sinistra" o "destra" sono sempre riferiti alla direzione del legame tra i residui della catena. Questo approccio garantisce due proprietà essenziali:
+
+- **Invarianza per rotazione:** Ruotare l'intera proteina sulla griglia non modifica il nome né la classificazione delle mosse, mantenendo invariata l'azione rappresentata dallo slot.
+
+- **Simmetria per riflessione:** Specchiare la conformazione equivale semplicemente a scambiare le mosse verso sinistra con quelle verso destra.
 
 | Tipo                                   | Su quali residui  | Cosa fa                                                                                                                                                                                                                                                                          |
 | -------------------------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -247,13 +251,111 @@ Ogni slot è una coppia **(residuo, tipo di mossa)**. I tipi sono definiti rispe
 | `PULL_PREV_L`, `PULL_PREV_R`           | interni           | Come sopra, ma accanto al vicino k−1; il resto viene trascinato dal lato di k+1.                                                                                                                                                                                                 |
 | `PULL_END_FF` … `PULL_END_RR` (9 tipi) | primo e ultimo    | **Pull move di un estremo**: il vicino dell'estremo va in una casella A e l'estremo in una casella B accanto ad A. La prima lettera dice dove sta A (avanti, sinistra o destra, visto dall'estremo); la seconda dove sta B (visto da A). Il resto della catena viene trascinato. |
 
+Grazie a questa categorizzazione relativa, ogni mossa geometricamente valida viene associata a uno e un solo tipo, garantendo la corrispondenza univoca con uno slot del vettore di output.
+
 ### 6.3 Quanti sono gli slot
 
-- ogni estremo ha 12 slot: 3 end move + 9 pull move di estremo;
+- Si vuole stabilire la formula matematica per calcolare il numero totale di slot (cioè la dimensione fissa del vettore delle azioni) necessari per descrivere una catena proteica di $N$ residui.
+
+  Il calcolo dello spazio totale delle azioni si ottiene sommando i possibili tipi di mossa associati a ciascuna posizione lungo la catena:
+  - **I due estremi (primo e ultimo residuo):** Ciascun estremo dispone di 12 slot dedicati (3 per le mosse VSHD di tipo `END` e 9 per le relative `PULL` dell'estremo).
+
+  - **I residui interni (da $1$ a $N - 2$):** Ciascun residuo interno possiede 5 slot (1 per la mossa `CORNER` e 4 per le relative `PULL` interne).
+
+  - **Le coppie interne (da $1$ a $N - 3$):** Ciascun residuo fino al penultimo-secondo aggiunge 1 slot dedicato al tipo `CRANKSHAFT`.
+
+  Sommando questi contributi per una sequenza generica di $N$ residui si ottiene la formula complessiva:
+
+  $$
+  (2 \times 12) + ((N - 2) \times 5) + (N - 3) = 24 + 5N - 10 + N - 3 = 6N + 11 \text{ slot}
+  $$
+
+  Nel caso specifico del dataset di default con proteine da $N = 16$ residui, il calcolo porta a $6(16) + 11 = 107$ slot totali:
+
+  - 24 slot riservati agli estremi ($2 \times 12$);
+
+  - 70 slot riservati ai 14 residui interni ($14 \times 5$);
+
+  - 13 slot riservati alle 13 coppie $k, k+1$ per i crankshaft.
+
+  Gli slot vengono numerati sequenzialmente residuo per residuo, e la mappa esatta tra l'indice numerico di ciascuno slot e la coppia (residuo, tipo di mossa) è salvata nel file `meta.json`. Questa organizzazione rigida consente alla rete neurale di apprendere la scelta dell'azione secondo due modalità flessibili: selezionando direttamente una mossa tra i 107 slot disponibili, oppure effettuando una scelta a due livelli (selezionando prima su quale residuo agire e successivamente quale mossa applicargli).
 - ogni residuo interno ha 5 slot: corner + 4 pull move;
 - i residui da 1 a N−3 hanno in più lo slot del crankshaft.
 
-In totale **6N + 11 slot**. Per N = 16: 24 + 70 + 13 = **107**. Gli slot sono numerati residuo per residuo; `meta.json` contiene la tabella che dice, per ogni numero di slot, a quale residuo e a quale tipo corrisponde. Così il modello può scegliere direttamente uno dei 107 slot, oppure prima il residuo e poi il tipo.
+#### Esempio
+
+Per una proteina con $N = 16$ residui, il vettore delle azioni è un array unidimensionale di **107 elementi** (slot), indicizzati da 0 a 106, in cui ciascuna posizione corrisponde in modo fisso a una coppia `(residuo, tipo_mossa)`.
+
+A seconda della fase di calcolo, lo stesso vettore da 107 elementi viene rappresentato in tre modi diversi:
+
+1. **Vettore Maschera (`mask`)**: Array binario in cui `1` indica che la mossa di quel dato slot è fisicamente eseguibile nella conformazione attuale e `0` indica che è vietata (es. casella occupata o geometria non valida).
+
+2. **Vettore Target (`optimal_actions`)**: Array binario usato per l'addestramento in cui `1` identifica le mosse ottime (che riducono la distanza dallo stato nativo) e `0` tutte le altre.
+
+3. **Vettore di Output della Rete Neurale**: Array di 107 numeri reali che rappresentano la distribuzione di probabilità calcolata dal modello per ciascuna mossa.
+
+A titolo di esempio, considerando una determinata conformazione della catena, la struttura interna del vettore e la mappatura dei suoi elementi si presenta così:
+
+```
+Indice Slot | Residuo | Tipo Mossa    | Maschera (Valida?) | Target (Ottima?)
+----------------------------------------------------------------------------
+0           | 0       | END_L         | 0 (Non valida)     | 0
+1           | 0       | END_R         | 1 (Valida)         | 0 (Sub-ottimale)
+2           | 0       | END_B         | 0 (Non valida)     | 0
+...         | ...     | ...           | ...                | ...
+15          | 2       | CORNER        | 1 (Valida)         | 1 (Mossa ottima)
+16          | 2       | PULL_NEXT_L   | 1 (Valida)         | 0 (Sub-ottimale)
+...         | ...     | ...           | ...                | ...
+106         | 15      | PULL_END_RR   | 0 (Non valida)     | 0
+```
+
+In Python o in un framework di Deep Learning, l'intero vettore maschera o target associato a quel singolo stato si traduce in un semplice array NumPy o Tensor:
+
+```
+# Vettore target (lunghezza 107)
+target = [0, 0, 0, ..., 1, 0, ..., 0]  # ha valore 1 solo negli slot 15 (e in eventuali altre mosse ottime)
+```
+
+**E per il vettore di output della rete neurale?**
+Il vettore di output della rete neurale è un array di 107 numeri reali (float), con valori compresi tra 0 e 1 in seguito all'applicazione di una funzione di attivazione come la Softmax. Ciascuna posizione $i$ del vettore rappresenta la stima di probabilità del modello che la mossa associata allo slot $i$ sia l'azione migliore da compiere nella conformazione corrente.
+
+A differenza dei vettori binari di `mask` e `optimal_actions` (composti unicamente da 0 e 1), l'output della rete è una distribuzione continua calcolata su tutti i 107 slot. Per impedire che il modello scelga un'azione fisicamente non consentita, il vettore grezzo prodotto dalla rete viene combinato tramite un prodotto elemento per elemento con il vettore `mask`. Gli slot vietati (`mask == 0`) vedono la propria probabilità annullata, e i valori delle mosse valide vengono rinormalizzati affinché la loro somma dia 1.
+
+Un esempio pratico della struttura del vettore di output prima e dopo l'applicazione della maschera si presenta così:
+
+```
+Indice Slot | Residuo | Tipo Mossa    | Output Rete | Maschera | Probabilità Finale
+------------------------------------------------------------------------------------
+0           | 0       | END_L         | 0.08        | 0        | 0.00 (Mossa vietata)
+1           | 0       | END_R         | 0.15        | 1        | 0.18 (Valida)
+...         | ...     | ...           | ...         | ...      | ...
+15          | 2       | CORNER        | 0.62        | 1        | 0.75 (Scelta preferita)
+16          | 2       | PULL_NEXT_L   | 0.06        | 1        | 0.07 (Valida)
+...         | ...     | ...           | ...         | ...      | ...
+106         | 15      | PULL_END_RR   | 0.02        | 0        | 0.00 (Mossa vietata)
+```
+
+- **Output Rete:** È la probabilità grezza calcolata dalla rete neurale per tutti i 107 slot, senza considerare se una mossa sia fisicamente eseguibile o vietata nella conformazione corrente.
+
+- **Probabilità Finale:** È il valore effettivo ricalcolato dopo aver azzerato le probabilità delle mosse vietate (`mask == 0`) e aver rinormalizzato i valori delle sole mosse valide affinché la loro somma sia pari a 1.
+
+
+
+In un framework di Deep Learning (come PyTorch o TensorFlow), l'azzeramento delle mosse non valide e la normalizzazione si gestiscono direttamente a livello di tensor:
+
+```
+# output_rete: tensor (107,) restituito dall'ultimo layer della rete
+# mask: tensor binario (107,) con 1 per le mosse valide e 0 per quelle vietate
+
+output_mascherato = output_rete * mask
+probabilita_finali = output_mascherato / output_mascherato.sum()
+```
+
+L'utilizzo operativo di questo vettore si divide in due contesti differenti:
+
+- **Durante l'addestramento:** Il vettore delle probabilità finale viene confrontato con il vettore target fornito dall'oracolo (`optimal_actions` o `soft_targets`) calcolando la funzione di perdita (ad esempio la *Cross-Entropy Loss*), spingendo la rete ad aumentare i valori di probabilità in corrispondenza degli slot delle mosse ottime.
+
+- **Durante il ripiegamento (inferenza):** L'algoritmo seleziona l'indice dello slot con il valore di probabilità più alto (approccio deterministico o *greedy*) oppure effettua un campionamento probabilistico tra le azioni valide. La mossa corrispondente a tale indice viene quindi applicata alla catena proteica per farla avanzare di un passo verso la conformazione nativa.
 
 ### 6.4 Corrispondenza con le mosse già implementate
 
