@@ -13,3 +13,4 @@ __pycache__/
 # Simulation outputs (can be regenerated)
 data/output/*
 !data/output/.gitkeep
+.claude/
