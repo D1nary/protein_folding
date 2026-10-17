@@ -712,4 +712,4 @@ Le note sui singoli file sono in `notes/file_functioning/cpp/include/hp/` e in `
 - **Oltre 16 residui le distanze non sono esatte.** Con l'oracolo sul grafo REMC sono limiti superiori, e la loro qualità dipende da quanto la REMC ha esplorato.
 - **La REMC non è salvata a parte.** I dati grezzi della REMC non vengono scritti in `output.samples_dir`: per rigenerare il dataset si rilancia anche la REMC. Le chiavi `remc.save_every` e `output.samples_dir` di fase 1 restano inutilizzate.
 - **Bilancio dettagliato della fase 1.** Con le mosse a senso unico della §7.6, la REMC campiona la distribuzione di Boltzmann solo in modo approssimato.
-- **Nessuna mossa "stop".** Lo spazio delle azioni contiene solo mosse; per decidere quando fermarsi si può usare `distance == 0`.
+- **Nessuna mossa "stop".** Lo spazio delle azioni contiene solo mosse; per decidere quando fermarsi si può usare `distance == 0` .
