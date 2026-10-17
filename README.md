@@ -5,8 +5,8 @@ Campionamento dello spazio delle conformazioni di una proteina nel modello HP
 etichettato di conformazioni native e decoy su cui addestrare un modello di
 machine learning.
 
-Stato attuale: **fasi 0 e 1 implementate**. Le fasi 2-3 non sono ancora
-implementate (i file contengono scheletri e `TODO`).
+Stato attuale: **fasi 0, 1 e 2 implementate**. La fase 3 non è ancora
+implementata (il file contiene uno scheletro e un `TODO`).
 
 ## Fasi
 
@@ -14,7 +14,7 @@ implementate (i file contengono scheletri e `TODO`).
 |---|---|---|
 | 0 | GUI per disegnare la configurazione iniziale | `python/hpfold/gui.py`, `python/hpfold/conformation.py` |
 | 1 | Ricerca dello stato nativo con REMC | `cpp/`, `python/hpfold/simulation.py` |
-| 2 | Generazione del dataset (nativi + decoy) | `cpp/` (salvataggio), `python/hpfold/dataset.py` |
+| 2 | Dataset per la policy di folding (stati, mosse valide, mosse ottime) | `cpp/` (azioni, oracolo, registrazione REMC), `python/hpfold/dataset.py` |
 | 3 | Addestramento del modello di ML | `python/hpfold/ml.py` |
 
 ## Struttura
@@ -29,7 +29,11 @@ protein_folding/
 │   │   ├── vshd_moves.hpp    # mosse VSHD (end, corner, crankshaft)
 │   │   ├── pull_moves.hpp    # pull moves
 │   │   ├── remc.hpp          # Replica Exchange Monte Carlo (REMC_m)
-│   │   └── sample_writer.hpp # salvataggio delle configurazioni intermedie
+│   │   ├── exact.hpp         # enumerazione esatta dello stato nativo
+│   │   ├── sample_writer.hpp # registrazione delle traiettorie REMC
+│   │   ├── canonical.hpp     # forma canonica e chiave di una conformazione
+│   │   ├── actions.hpp       # spazio delle azioni (6N + 11 slot)
+│   │   └── state_graph.hpp   # grafo delle mosse e oracolo del dataset
 │   ├── src/                  # implementazioni (.cpp) degli header
 │   └── bindings/
 │       └── bindings.cpp      # wrapper pybind11 -> modulo hpfold._core
@@ -46,7 +50,8 @@ protein_folding/
 │   ├── test_conformation.py  # logica della fase 0
 │   ├── test_gui.py           # parti della GUI che non aprono finestre
 │   ├── test_core.py          # nucleo C++: energia, mosse VSHD e pull
-│   └── test_simulation.py    # fase 1: REMC, riproducibilità, output
+│   ├── test_simulation.py    # fase 1: REMC, riproducibilità, output
+│   └── test_dataset.py       # fase 2: azioni, simmetrie, oracolo, file
 ├── data/
 │   ├── input/                # configurazione iniziale disegnata con la GUI
 │   └── output/               # conformazione nativa, campioni (non versionato)
@@ -190,8 +195,22 @@ Come funziona:
   conformazione iniziale.
 
 A parità di `seed` (e di macchina e compilatore) la simulazione è
-riproducibile. `remc.save_every` e `output.samples_dir` non sono ancora usati:
-servono al salvataggio delle configurazioni intermedie, previsto per la fase 2.
+riproducibile. `remc.save_every` e `output.samples_dir` non sono usati: la
+fase 2 lancia una propria REMC per ogni sequenza (`[dataset.remc]`) e
+registra gli stati visitati in memoria.
+
+### Fase 2: dataset
+
+```bash
+python -m hpfold --config config/default.toml dataset
+```
+
+Per molte sequenze casuali di lunghezza `protein.length`, raccoglie stati
+dalla REMC e li etichetta con un oracolo (ricerca in ampiezza sul grafo delle
+mosse): per ogni stato le mosse valide, la distanza dallo stato nativo dopo
+ogni mossa e il ΔE di ogni mossa. Fino a `dataset.exact_max_length` residui
+(16) l'oracolo è esatto. Formato, scelte e lettura dei file sono in
+`notes/dataset.md`.
 
 ### Verifica della fase 1: enumerazione esatta
 

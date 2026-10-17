@@ -15,6 +15,7 @@ namespace {
 struct Replica {
     Conformation conformation;
     int energy;
+    int walker;  // follows the conformation through the swaps
 };
 
 void check_params(const RemcParams& p) {
@@ -45,7 +46,8 @@ std::vector<double> temperature_ladder(int n_replicas, double t_min, double t_ma
     return temperatures;
 }
 
-RemcResult run_remc(const Conformation& initial, const RemcParams& params) {
+RemcResult run_remc(const Conformation& initial, const RemcParams& params,
+                    SampleRecorder* recorder) {
     check_params(params);
 
     // A single generator for the whole simulation: the replicas are advanced
@@ -59,7 +61,13 @@ RemcResult run_remc(const Conformation& initial, const RemcParams& params) {
 
     // replicas[i] is always the conformation at temperature temperatures[i]:
     // a swap exchanges the conformations, the temperatures stay in place.
-    std::vector<Replica> replicas(params.n_replicas, Replica{initial, initial.energy()});
+    std::vector<Replica> replicas(params.n_replicas, Replica{initial, initial.energy(), 0});
+    for (int r = 0; r < params.n_replicas; ++r) {
+        replicas[r].walker = r;
+    }
+    if (recorder != nullptr) {
+        recorder->start(params.n_replicas, initial);
+    }
 
     RemcResult result{initial, initial.energy(), temperatures, {}, 0, 0};
 
@@ -86,6 +94,9 @@ RemcResult run_remc(const Conformation& initial, const RemcParams& params) {
                 const int delta = new_energy - replica.energy;
                 if (delta <= 0 || uniform(rng) < std::exp(-delta / temperature)) {
                     replica.energy = new_energy;
+                    if (recorder != nullptr) {
+                        recorder->record_move(replica.walker, replica.conformation);
+                    }
                     if (new_energy < result.best_energy) {
                         result.best_energy = new_energy;
                         result.best = replica.conformation;
@@ -93,6 +104,13 @@ RemcResult run_remc(const Conformation& initial, const RemcParams& params) {
                 } else {
                     replica.conformation.apply(undo);
                 }
+            }
+        }
+
+        if (recorder != nullptr && recorder->wants_snapshot(cycle)) {
+            for (int r = 0; r < params.n_replicas; ++r) {
+                recorder->record_snapshot(cycle, r, replicas[r].walker, replicas[r].energy,
+                                          replicas[r].conformation);
             }
         }
 

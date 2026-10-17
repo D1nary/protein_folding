@@ -9,14 +9,20 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Simulation logic, independent of Python.
 add_library(hp_core STATIC
+    cpp/src/actions.cpp
+    cpp/src/canonical.cpp
     cpp/src/conformation.cpp
     cpp/src/exact.cpp
     cpp/src/pull_moves.cpp
     cpp/src/remc.cpp
     cpp/src/sample_writer.cpp
+    cpp/src/state_graph.cpp
     cpp/src/vshd_moves.cpp
 )
 target_include_directories(hp_core PUBLIC cpp/include)
+# std::thread, used to build large state graphs in parallel.
+find_package(Threads REQUIRED)
+target_link_libraries(hp_core PUBLIC Threads::Threads)
 target_compile_options(hp_core PRIVATE -Wall -Wextra)
 # Required because the static library is linked into a shared module.
 set_target_properties(hp_core PROPERTIES POSITION_INDEPENDENT_CODE ON)

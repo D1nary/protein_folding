@@ -53,5 +53,37 @@ native_conformation = "data/output/native_conformation.json"
 samples_dir = "data/output/samples"   # intermediate configurations written by the C++ code
 dataset_dir = "data/output/dataset"   # labelled dataset (phase 2)
 
+[dataset]
+# Labelled dataset for the folding policy (phase 2): states of many sequences
+# of length protein.length, each with the feasible actions and their distance
+# from the native state. See notes/dataset.md.
+n_sequences = 100               # sequences in the dataset (lowest energy < 0)
+h_fraction = 0.5                # probability that a residue of a random sequence is H
+include_config_sequence = true  # protein.sequence is the first sequence
+seed = 7                        # sequences, splits, choice of the states
+split = [0.8, 0.1, 0.1]         # fractions of train, val, test, by sequence
+# Up to this length the oracle works on the graph of all the conformations
+# (exact distances); longer chains use the graph of the states visited by the
+# REMC (upper bounds). About 800 000 states and 5 s for 16 residues; the
+# number grows by about 2.7 times per residue.
+exact_max_length = 16
+decoys_per_temperature = 20     # REMC snapshots per replica used as starting states
+perturb_fraction = 0.25         # recovery states, as a fraction of the path states
+perturb_max_moves = 3           # random moves that push a path state off course
+max_recorded_steps = 50000      # accepted moves recorded for every walker
+
+[dataset.remc]
+# REMC run for every sequence of the dataset, shorter than the one of phase 1.
+# The ladder goes to higher temperatures than [remc] so that the snapshots
+# also contain unfolded conformations, not only compact ones.
+n_replicas = 5
+t_min = 0.160
+t_max = 1.000
+local_steps = 100
+n_cycles = 200
+rho = 0.4
+save_every = 2      # cycles between two snapshots of the replicas
+seed = 42           # seed of the first sequence; sequence i uses seed + i
+
 # [ml]
 # Model and training parameters: to be defined in phase 3.

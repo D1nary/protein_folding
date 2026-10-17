@@ -40,6 +40,6 @@ Raccoglie ciò che la simulazione restituisce al chiamante.
 ### Funzioni libere
 
 - **`temperature_ladder(int n_replicas, double t_min, double t_max)`** — Restituisce le temperature delle repliche, spaziate linearmente tra `t_min` e `t_max`. Serve a `run_remc` per assegnare una temperatura a ogni replica.
-- **`run_remc(const Conformation& initial, const RemcParams& params)`** — Esegue l'intera simulazione REMC facendo partire tutte le repliche da `initial` e restituisce un `RemcResult`. Lancia `std::invalid_argument` se i parametri non sono validi.
+- **`run_remc(const Conformation& initial, const RemcParams& params, SampleRecorder* recorder = nullptr)`** — Esegue l'intera simulazione REMC facendo partire tutte le repliche da `initial` e restituisce un `RemcResult`. Lancia `std::invalid_argument` se i parametri non sono validi. Il `recorder` opzionale ([sample_writer.hpp](../../../../../cpp/include/hp/sample_writer.hpp)) riceve le traiettorie dei walker e gli snapshot delle repliche, che servono alla fase 2. Per seguire i walker ogni replica porta con sé un indice `walker`, che viaggia con la conformazione negli scambi. Senza recorder la simulazione è identica a prima.
 
 

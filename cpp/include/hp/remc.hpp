@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "hp/conformation.hpp"
+#include "hp/sample_writer.hpp"
 
 namespace hp {
 
@@ -50,7 +51,12 @@ std::vector<double> temperature_ladder(int n_replicas, double t_min, double t_ma
 // The best conformation is updated after every accepted move, not only at the
 // end of the local search.
 //
+// If `recorder` is given, it receives the trajectories of the walkers and the
+// snapshots of the replicas (sample_writer.hpp). Recording does not use the
+// random generator: the simulation is the same with or without it.
+//
 // Throws std::invalid_argument if the parameters are not valid.
-RemcResult run_remc(const Conformation& initial, const RemcParams& params);
+RemcResult run_remc(const Conformation& initial, const RemcParams& params,
+                    SampleRecorder* recorder = nullptr);
 
 }  // namespace hp
