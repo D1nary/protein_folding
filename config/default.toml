@@ -19,6 +19,9 @@ initial_conformation = "data/input/initial_conformation.json"
 
 [gui]
 # Appearance of the drawing window (phase 0).
+# The grid of the window is a square of protein.length + 4 nodes per side, the
+# lattice on which the dataset (phase 2) places every state; it does not use
+# [lattice], which must be at least that large.
 # Sizes when the window opens: resizing the window rescales the grid and the
 # residues, keeping the same proportion between the two.
 cell_size = 60              # distance in pixels between two adjacent nodes of the grid

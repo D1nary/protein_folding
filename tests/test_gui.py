@@ -2,6 +2,7 @@
 
 import pytest
 
+from hpfold import _core
 from hpfold.conformation import load_conformation, validate_conformation
 
 # The module imports Tkinter: skip these tests where it is not installed.
@@ -50,6 +51,7 @@ def test_fit_grid_keeps_the_whole_grid_inside_the_canvas():
 
 def make_config(tmp_path, sequence="HPHPPH", length=6):
     return {
+        # The GUI does not use [lattice]: a small grid shows that it is ignored.
         "lattice": {"width": 4, "height": 4},
         "protein": {
             "length": length,
@@ -59,12 +61,18 @@ def make_config(tmp_path, sequence="HPHPPH", length=6):
     }
 
 
+def test_grid_side_is_the_lattice_of_the_dataset(tmp_path):
+    for length in (3, 6, 16):
+        config = make_config(tmp_path, sequence="H" * length, length=length)
+        assert gui.grid_side(config) == length + 4 == _core.free_lattice_side(length)
+
+
 def test_write_default_conformation(tmp_path):
     path = gui.write_default_conformation(make_config(tmp_path))
 
     sequence, coordinates = load_conformation(path)
     assert sequence == "HPHPPH"
-    validate_conformation(sequence, coordinates, 4, 4)
+    validate_conformation(sequence, coordinates, 10, 10)  # 6 residues + 4
 
 
 def test_write_default_conformation_checks_the_length(tmp_path):

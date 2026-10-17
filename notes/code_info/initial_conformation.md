@@ -18,11 +18,13 @@ Un oggetto JSON con due chiavi:
 
 ## Convenzione sulle coordinate
 
-- `x` è la colonna, `0 <= x < lattice.width`.
-- `y` è la riga, `0 <= y < lattice.height`.
+- `x` è la colonna, `0 <= x < protein.length + 4`.
+- `y` è la riga, `0 <= y < protein.length + 4`.
 - L'origine `(0, 0)` è il nodo in alto a sinistra nella finestra, e `y` cresce verso il basso. Il verso dell'asse non ha effetti sull'energia, che dipende solo da quali residui sono adiacenti.
 
-Le dimensioni della griglia non sono nel file: restano solo nel TOML, così ogni dato ha una sola fonte.
+Le dimensioni della griglia non sono nel file.
+
+La GUI disegna su una griglia quadrata di lato `protein.length + 4` (`grid_side` in [gui.py](../../python/hpfold/gui.py)). È lo stesso reticolo su cui il dataset ricostruisce ogni stato (`free_lattice_side`, vedi [notes/dataset.md](../dataset.md)). La fase 1 rilegge poi il file sulla griglia di `[lattice]`, che quindi deve essere almeno di lato `protein.length + 4` (30 × 30 di default).
 
 ## Cosa è garantito
 

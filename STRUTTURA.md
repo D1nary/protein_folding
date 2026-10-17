@@ -75,7 +75,7 @@ File:
 - `__main__.py`: Riga di comando: `python -m hpfold --config <file> <fase>` legge la configurazione e avvia la fase richiesta.
 - `config.py`: Lettura del file di configurazione TOML.
 - `conformation.py`: Logica della fase 0, senza codice grafico: stato della catena in costruzione, validazione delle mosse, conformazione di default e lettura/scrittura del file JSON (usata anche dalla fase 1 per leggere l'input e scrivere il risultato).
-- `gui.py`: Fase 0: finestra Tkinter per disegnare a mano la configurazione iniziale. Contiene solo l'interfaccia e usa `conformation.py` per tutto il resto.
+- `gui.py`: Fase 0: finestra Tkinter per disegnare a mano la configurazione iniziale, su una griglia quadrata di lato `protein.length + 4` (lo stesso reticolo su cui il dataset costruisce gli stati). Contiene solo l'interfaccia e usa `conformation.py` per tutto il resto.
 - `simulation.py`: Fase 1: legge la conformazione iniziale, costruisce i parametri dal file di configurazione, avvia la simulazione REMC chiamando il codice C++ (`hpfold._core`) e salva la conformazione a energia minima.
 - `verification.py`: Verifica della fase 1, eseguita solo su richiesta (`verify`): legge la conformazione salvata dal REMC e ne confronta l'energia con il minimo esatto calcolato per enumerazione, se la catena non supera `exact.max_length`.
 - `dataset.py`: Fase 2: costruisce il dataset per la policy di folding (stati da REMC, percorsi ottimi verso lo stato nativo, stati di recupero, etichette dell'oracolo C++), lo divide in split per sequenza e lo salva; contiene anche le funzioni per rileggerlo (`load_split`), per ricavare le codifiche (coordinate, matrice di contatto, griglia) e per l'augmentation per simmetria. Vedi `notes/dataset.md`.

@@ -11,6 +11,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox
 
+from hpfold import _core
 from hpfold.conformation import (
     RESIDUE_TYPES,
     Chain,
@@ -58,6 +59,17 @@ def pixel_to_cell(
     return round((px - origin[0]) / cell_size), round((py - origin[1]) / cell_size)
 
 
+def grid_side(config: dict) -> int:
+    """Side of the square grid of the GUI: N + 4 nodes for a chain of N residues.
+
+    It is the lattice on which the dataset (phase 2) places every state
+    (free_lattice_side in cpp/include/hp/canonical.hpp), so the chain is drawn
+    on a grid of the same size. It does not depend on [lattice], which is the
+    grid of the REMC.
+    """
+    return _core.free_lattice_side(config["protein"]["length"])
+
+
 def cell_to_pixel(
     cell: Coord, cell_size: float, origin: tuple[float, float]
 ) -> tuple[float, float]:
@@ -72,11 +84,8 @@ class ConformationEditor:
     def __init__(self, root: tk.Tk, config: dict) -> None:
         self.root = root
         self.output_path = Path(config["protein"]["initial_conformation"])
-        self.chain = Chain(
-            config["lattice"]["width"],
-            config["lattice"]["height"],
-            config["protein"]["length"],
-        )
+        side = grid_side(config)
+        self.chain = Chain(side, side, config["protein"]["length"])
 
         gui = config["gui"]
         # Size of the grid when the window opens. Resizing the window changes
@@ -381,15 +390,15 @@ def write_default_conformation(config: dict) -> Path:
     Returns the path of the written file.
     """
     protein = config["protein"]
-    lattice = config["lattice"]
     sequence = protein["sequence"]
     if len(sequence) != protein["length"]:
         raise ValueError(
             f"protein.length is {protein['length']} but protein.sequence "
             f"has {len(sequence)} residues"
         )
-    coordinates = default_coordinates(lattice["width"], lattice["height"], len(sequence))
-    validate_conformation(sequence, coordinates, lattice["width"], lattice["height"])
+    side = grid_side(config)
+    coordinates = default_coordinates(side, side, len(sequence))
+    validate_conformation(sequence, coordinates, side, side)
     path = Path(protein["initial_conformation"])
     save_conformation(path, sequence, coordinates)
     return path

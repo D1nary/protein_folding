@@ -51,22 +51,15 @@ né la GUI né `initial_conformation.json`.
 
 
 
+
+
+
+
+
 L’algoritmo crea n_replicas copie della configurazione iniziale e assegna a ciascuna una temperatura diversa, equispaziata tra t_min e t_max. Ogni replica esegue local_steps passi di Monte Carlo Metropolis alla propria temperatura, usando pull moves con probabilità rho oppure mosse VSHD. Al termine dei passi locali si tentano scambi di conformazione tra repliche a temperature adiacenti, alternando ad ogni ciclo le coppie pari (0-1, 2-3, …) e dispari (1-2, 3-4, …) (per esempio al cycle 1 di n_cycles si tenta lo scambio solo tra coppie pari mentre al cycle 1  si tenta lo scambio solo tra coppie dispari). Ogni tentativo di scambio tra due repliche a temperature adiacenti viene accettato o rifiutato con una certa probabilità. Il ciclo si ripete n_cycles volte e si conserva la conformazione di energia minima trovata.
-
-
-
-
 
 Alla fine dell'algoritmo REMC cosa ottengo?
 Alla fine hai n_replicas temperature fisse, ognuna con la conformazione e l’energia che ci si trovano in quel momento. Le conformazioni si sono mosse lungo la scala grazie agli swap. L’output che conta per il folding è la migliore conformazione trovata durante tutta la simulazione.
-
-
-
-
-
-
-
-
 
 Caratteristiche che deve opssedere il dataset:
 

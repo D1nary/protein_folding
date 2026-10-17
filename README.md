@@ -129,8 +129,10 @@ All'avvio la GUI chiede se si vuole disegnare una nuova proteina:
 - **No**: viene salvata la proteina di default, cioè `protein.sequence` con una
   forma generata automaticamente (catena a serpentina dall'angolo in alto a
   sinistra).
-- **Yes**: si apre la griglia `lattice.width` × `lattice.height` e si procede in
-  due step.
+- **Yes**: si apre una griglia quadrata di lato `protein.length + 4`, la stessa
+  su cui il dataset (fase 2) costruisce ogni stato, e si procede in due step.
+  `[lattice]` non conta per la GUI: è la griglia della REMC, che deve quindi
+  essere almeno grande quanto quella della GUI.
   1. **Disegno della catena.** Ogni click su un nodo aggiunge un residuo,
      collegato al precedente. Il nodo deve essere libero e adiacente
      (su/giù/sinistra/destra) all'ultimo residuo; il primo può andare ovunque.
