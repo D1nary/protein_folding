@@ -10,27 +10,168 @@ python -m hpfold --config config/default.toml dataset
 
 I file finiscono nella cartella `output.dataset_dir` (di default `data/output/dataset/`).
 
----
-
-## 1. A cosa serve
-
 Nella fase 3 un modello di machine learning dovrà imparare a **ripiegare la proteina un passo alla volta**: parte da una conformazione srotolata e, mossa dopo mossa, la porta fino allo stato nativo (la conformazione a energia minima).
 
-A ogni passo il modello riceve:
+---
 
-1. **la sequenza HP**, che non cambia durante il ripiegamento. Esempio: `HPHHPH` diventa `[1, 0, 1, 1, 0, 1]`;
-2. **la conformazione attuale**, cioè la forma della catena in quel momento;
-3. facoltativamente, **l'energia** della conformazione attuale.
+## 1. Come vengono utilizzati i dati del dataset
 
-e deve rispondere con **una mossa**, per esempio "sposta il monomero 3 con una pull move verso sinistra".
+## ML supervisionato
 
-Il dataset fornisce gli esempi da cui imparare. Ogni esempio (un **record**) è una coppia (sequenza, conformazione), insieme a:
+In un modello di Machine Learning supervisionato, il dataset di addestramento è composto da una raccolta di **esempi etichettati** (*labeled examples*). Ogni singolo esempio è costituita dalle **Feature** (input) e dal **Target** o **Label** (l'output corretto).
 
-- l'elenco delle mosse **possibili** in quella conformazione;
-- per ogni mossa possibile, **quanto si avvicina allo stato nativo**;
-- per ogni mossa possibile, **di quanto cambia l'energia**.
+- **Feature ($X$ - Caratteristiche di input):** Le variabili, proprietà o misurazioni che descrivono i dati.
 
-Da questi dati si ricava la risposta giusta: le mosse migliori sono quelle che avvicinano di più allo stato nativo.
+- **Label o Target ($y$ - Etichetta / Risposta corretta):** Il valore reale (*ground truth*) che il modello deve imparare a prevedere partendo dalle feature
+
+Una istanza (record) è una singola riga del dataset espressa come coppia $(x_i, y_i)$, dove $x_i$ è il vettore delle caratteristiche e $y_i$ è il relativo valore bersaglio.
+
+Durante l'addestramento, l'algoritmo riceve in ingresso le feature di esempio e i valori target. Da questi impara come deve comportarsi ogni volta che riceve una nuova feature in ingresso.
+
+## Caso del progetto (record)
+
+Nel nostro caso, l'algoritmo ML deve imparare come ripiegare passo passo una proteina. Vediamo ora cosa riceve in ingresso al momento del training.
+
+L'algorimo riceve in ingresso un **record** ovvero una “fotografia” della proteina in un certo momento del ripiegamento, con incluse le risposte giuste scritte (le mosse di ripeigamento corrette) dall’insegnante. Analogamente al caso generale ogni record è composto da informazioni riguardanti le featue e informazioni riguardanti il target. In particolare si ha:
+
+- **`seq_id`**: Un id che rimanda alla sequenza della proteina presa in considerazione (es: `HPHHPH`)
+
+- **Conformazione attuale (`turns`):** Cioè la catena descritta come una serie di “dritto / sinistra / destra”
+
+- **Energia attuale (`energy`):** Il valore energetico scalare della conformazione corrente.
+
+- **Maschera delle mosse valide (`mask`):** Vettore binario di dimensione fissa $A = 6N + 11$ (es. **107 slot** per una catena di $N=16$ residui). Ogni slot vale `1` se la mossa è fisicamente eseguibile senza sovrapposizioni sulla griglia, `0` se è vietata.
+
+Per quanto riguarda il target ricevuto in ingresso dall'algoritmo, esso non è prodotto dalla simulazione casuale REMC, ma viene calcolata da un **Oracolo** (tramite un algoritmo BFS sui cammini minimi). In particolare si ha: 
+
+- **Quanto manca alla fine** (`distance`): la distanza di una conformazione è il numero minimo di mosse che servono per portarla allo stato nativo calcolata dall'oracolo. L’oracolo la calcola con una BFS che parte dagli stati nativi e procede all’indietro nel grafo delle mosse. Uno stato nativo ha distanza **0**. Fino a 16 residui il valore è esatto.
+
+- **Dove porta ogni mossa** (`next_distance`): per ogni slot di mossa, `next_distance` indica la distanza dallo stato nativo della conformazione in cui ci si trova dopo averla fatta. **−1** vuol dire che la mossa è impossibile. Le **mosse ottime** sono quelle che portano da distanza *d* a distanza *d − 1*, cioè avvicinano di un passo allo stato nativo.
+
+- **come cambia l’energia con ogni mossa**: `next_energy_delta`.
+
+#### Un esempio
+
+> “Sequenza n. 12, forma attuale = questa, mancano 3 mosse.  
+> Mossa 5 → ti lascia a 2 ✅ · Mossa 9 → a 2 ✅ · Mossa 14 → a 4 ❌ · Mossa 20 → impossibile.”
+
+Da qui il modello impara che in quella situazione deve scegliere la 5 o la 9. Non c’è per forza una sola risposta giusta: di solito ce ne sono diverse.
+
+### Da dove vengono i record?
+
+I record vengono da **quattro fonti**, segnate nel campo `source`. Tutte partono da una simulazione REMC fatta per ogni sequenza. Cambia solo il modo in cui da quella simulazione si scelgono gli stati da salvare.
+
+Prima di iniziare la spiegazione teniamo a mente la seguente distinzione tra replica e walker nell'algoritmo REMC:
+
+- **Replica**: uno dei 5 **posti a temperatura fissa** della simulazione. La replica non cambia mai temperatura. Cambia invece la conformazione che la occupa: dopo uno scambio, nella replica fredda può esserci una catena diversa da quella di prima.
+- **Walker**: una delle 5 **catene simulate**, seguita per tutta la durata della simulazione. Durante la simulazione la catena cambia temperatura ma il walker relativo rimane sempre lo stesso.
+
+Le fonti dei walker sono le segunti:
+
+#### 1. `remc_snapshot`
+
+A intervalli regolari si fotografa la conformazione di ogni replica (foto della conformazione presente in ciascuna temperatura). Per ogni temperatura se ne scelgono alcune a caso. Esse sono i **decoy**.
+
+- Le temperature fredde danno forme compatte, quasi native.
+- Le temperature calde (fino a 1,0) danno forme srotolate.
+
+Una volta estratto uno di questi, vengono calcolati attraverso l'oracolo la `distance` e `next_distance`. Una volta fatto questo, il record viene dato in pasta al modello durante il training. Attraverso questo il modello apprende una "situazione" e impara come arrivare allo stato nativo da quella stessa situazione. 
+Così il modello vede proteine in ogni fase del ripiegamento.
+
+**Obiettivo del record:** 
+**Varietà di punti di partenza**. Sono conformazioni prese a tutte le temperature, da srotolate a quasi native. Così il modello impara a muoversi da qualsiasi stadio del ripiegamento, non solo da uno.
+
+#### 2. `oracle_path`
+
+Un `oracle_path` è il **percorso più breve** dalla forma di un decoy fino allo stato nativo, scelto dall’oracolo una mossa ottima alla volta.
+
+Come si procede per l'estrazione di un record di tipo `oracle_path` :
+
+0. Per una data sequenza (una delle 100) si calola il grafo delle mosse corrette partendo dall'oracolo
+
+1. Dalle foto (snapshot) della REMC si prendono, **per ogni temperatura**, `decoys_per_temperature` conformazioni diverse a caso. Così si parte sia da forme srotolate (temperature calde) sia da forme quasi native (temperature fredde).
+
+2. Da ogni decoy si fa una “discesa” sulla mappa delle distanze:
+
+```
+stato attuale a distanza d 
+→ guarda tutte le mosse possibili 
+→ tieni quelle che portano a distanza d − 1 (le mosse ottime) 
+→ se sono più di una, scegline una a caso (con seed fissato) 
+→ applicala e ripeti finché d = 0
+```
+
+3. Salvataggio delle configurazioni:
+
+   - **Ogni stato del percorso diventa un record**, con le sue etichette complete (`distance` e `next_distance`).
+
+   - **Il percorso stesso** si salva come sequenza ordinata di record (`path_records`), insieme alle mosse fatte (`path_actions`) e al tipo `path_kind = oracle`.
+
+**Obiettivo del record:** 
+**Esempi di comportamento ideale.** Mostrano la strada più corta passo per passo, dall’inizio alla fine. Sono gli esempi più “puliti” di come si ripiega la proteina.
+
+#### 3. `remc_pruned`
+
+`remc_pruned` sono gli stati che la simulazione REMC ha **visitato davvero** mentre cercava lo stato nativo, dopo aver tolto i giri inutili.
+
+La REMC fa evolvere più repliche, ciascuna a una temperatura, e ogni tanto scambia le conformazioni tra temperature vicine. Uno scambio non cambia la forma: cambia solo la temperatura a cui quella forma si trova. Se si segue **una stessa conformazione** attraverso gli scambi (un *walker*), si ottiene una catena continua di stati, ciascuno a una mossa dal precedente. È il filmato di una proteina che si ripiega per tentativi.
+
+Il filmato viene tagliato al **primo stato nativo** raggiunto. **Si considerano solo i walker che arrivano allo stato nativo**
+
+Si applica la pulizia del walker in due fasi:
+
+1. **Togliere i cicli.** Quando il walker torna in uno stato già visto, tutto quello che c’è in mezzo si cancella:
+   `A → B → C → B → A → E → D   diventa   A → E → D`
+   Per capire che “è lo stesso stato” si usa la chiave canonica (vedi dopo), così le rotazioni e le traslazioni della stessa forma contano come uno stato solo.
+
+2. Il passo 1 elimina solo i ritorni **esatti** in uno stato già visto. Però il walker può anche passare **vicino** a uno stato visitato prima senza tornarci davvero, e il passo 1 questo non lo vede.
+
+   Esempio:
+
+   Dopo il passo 1 il percorso è:
+
+   `A → E → F → G → D`
+
+   Nessuno stato si ripete, quindi il passo 1 non può accorciarlo. Però **A e D sono a una sola mossa di distanza**: da A esisteva una mossa che portava subito in D. La REMC non l’ha fatta perché ha scelto a caso, e ha girato per E, F, G.
+
+   Il passo 2 trova questi casi:
+
+   `A → E → F → G → D   diventa   A → D`
+
+   Come funziona:
+
+   1. Si prende l’insieme degli stati che il walker ha visitato: {A, E, F, G, D, …}.
+   2. Per ogni coppia di questi stati ci si chiede se si può passare dall’uno all’altro con una sola mossa, **anche se la REMC non l’ha mai fatta**.
+   3. Si ottiene una piccola mappa che collega solo gli stati visitati, e su quella si cerca la strada più corta da A al nativo (con una BFS).
+
+**Obiettivo del record:** 
+**Realismo.** Passano per gli stati che una simulazione fisica visita davvero, che non sono sempre quelli dei percorsi ottimi. Il modello vede le conformazioni “tipiche” di una catena che si ripiega, non solo quelle lungo la strada perfetta.
+
+#### 4. `perturbed`
+
+Gli stati `perturbed` sono conformazioni ottenute partendo da uno stato “buono” del dataset e **facendo apposta qualche mossa a caso**. Servono a insegnare al modello come rimettersi in carreggiata dopo un errore.
+
+**Il problema che risolvono**
+
+Senza questi stati, il modello vedrebbe solo stati che stanno su un percorso verso il nativo: decoy, percorsi ottimi e traiettorie ripulite. Durante l’uso, però, prima o poi sbaglierà una mossa e finirà in una forma “fuori dal sentiero” che non ha mai visto. Lì è più probabile che sbagli di nuovo, poi ancora, e l’errore si accumula.
+
+Somiglia a chi impara a guidare solo restando al centro della corsia: la prima volta che finisce sul bordo non sa cosa fare. Gli stati perturbati sono le lezioni in cui l’istruttore ti sposta di proposito verso il bordo e ti insegna a rientrare.
+
+**Come vengono creati:**
+
+1. Si prendono **tutti gli stati raccolti fino a quel momento** per la sequenza: decoy, stati dei percorsi ottimi e stati delle traiettorie ripulite.
+2. Se ne sceglie a caso **il 25%** (`perturb_fraction = 0.25`), senza ripetizioni.
+3. Per ognuno si estrae un numero di passi **k tra 1 e 3** (`perturb_max_moves = 3`).
+4. Si fanno **k mosse casuali tra quelle possibili**, ognuna con la stessa probabilità (`random_walk`, dataset.py:138). Non sono scelte per forza mosse sbagliate: è una spinta a caso.
+5. Lo stato in cui si arriva diventa un nuovo record con `source = perturbed`.
+
+**Le etichette:**
+
+Come per tutti gli altri record, l’oracolo calcola distanza, mosse possibili e mosse ottime. Quindi il record dice “sei finito qui, ecco le mosse per tornare verso il nativo”.
+
+**Obiettivo del record:** 
+
+**Correggere gli errori.** Quando il modello sbaglia una mossa, finisce in stati che i percorsi ottimi non toccano mai. Questi record gli insegnano a rientrare in strada, così un errore non si somma al successivo. È il problema dell’accumulo dell’errore
 
 ---
 
@@ -232,15 +373,7 @@ L'adozione degli **slot** risolve questa discrepanza creando uno spazio delle az
 
 ### 6.2 I tipi di mossa
 
-Ogni slot è una coppia **(residuo, tipo di mossa)**. 
-
-Si vuole analizzare nel dettaglio quali sono i tipi di mossa che, combinati con ciascun residuo della catena, vanno a comporre i singoli slot dello spazio delle azioni.
-
-Il concetto fondamentale di questo punto è che le mosse **non sono definite tramite direzioni assolute della griglia** (come "su", "giù", "destra", "sinistra"), bensì **in modo relativo rispetto all'orientamento locale della catena proteica**. Termini come "sinistra" o "destra" sono sempre riferiti alla direzione del legame tra i residui della catena. Questo approccio garantisce due proprietà essenziali:
-
-- **Invarianza per rotazione:** Ruotare l'intera proteina sulla griglia non modifica il nome né la classificazione delle mosse, mantenendo invariata l'azione rappresentata dallo slot.
-
-- **Simmetria per riflessione:** Specchiare la conformazione equivale semplicemente a scambiare le mosse verso sinistra con quelle verso destra.
+Ogni slot è una coppia **(residuo, tipo di mossa)**. I tipi sono definiti rispetto alla catena, non con direzioni assolute come "su" o "giù": "sinistra" e "destra" sono sempre riferite a un legame della catena. In questo modo una rotazione della griglia non cambia il nome di una mossa, e una riflessione si limita a scambiare sinistra e destra.
 
 | Tipo                                   | Su quali residui  | Cosa fa                                                                                                                                                                                                                                                                          |
 | -------------------------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -251,111 +384,13 @@ Il concetto fondamentale di questo punto è che le mosse **non sono definite tra
 | `PULL_PREV_L`, `PULL_PREV_R`           | interni           | Come sopra, ma accanto al vicino k−1; il resto viene trascinato dal lato di k+1.                                                                                                                                                                                                 |
 | `PULL_END_FF` … `PULL_END_RR` (9 tipi) | primo e ultimo    | **Pull move di un estremo**: il vicino dell'estremo va in una casella A e l'estremo in una casella B accanto ad A. La prima lettera dice dove sta A (avanti, sinistra o destra, visto dall'estremo); la seconda dove sta B (visto da A). Il resto della catena viene trascinato. |
 
-Grazie a questa categorizzazione relativa, ogni mossa geometricamente valida viene associata a uno e un solo tipo, garantendo la corrispondenza univoca con uno slot del vettore di output.
-
 ### 6.3 Quanti sono gli slot
 
-- Si vuole stabilire la formula matematica per calcolare il numero totale di slot (cioè la dimensione fissa del vettore delle azioni) necessari per descrivere una catena proteica di $N$ residui.
-
-  Il calcolo dello spazio totale delle azioni si ottiene sommando i possibili tipi di mossa associati a ciascuna posizione lungo la catena:
-  - **I due estremi (primo e ultimo residuo):** Ciascun estremo dispone di 12 slot dedicati (3 per le mosse VSHD di tipo `END` e 9 per le relative `PULL` dell'estremo).
-
-  - **I residui interni (da $1$ a $N - 2$):** Ciascun residuo interno possiede 5 slot (1 per la mossa `CORNER` e 4 per le relative `PULL` interne).
-
-  - **Le coppie interne (da $1$ a $N - 3$):** Ciascun residuo fino al penultimo-secondo aggiunge 1 slot dedicato al tipo `CRANKSHAFT`.
-
-  Sommando questi contributi per una sequenza generica di $N$ residui si ottiene la formula complessiva:
-
-  $$
-  (2 \times 12) + ((N - 2) \times 5) + (N - 3) = 24 + 5N - 10 + N - 3 = 6N + 11 \text{ slot}
-  $$
-
-  Nel caso specifico del dataset di default con proteine da $N = 16$ residui, il calcolo porta a $6(16) + 11 = 107$ slot totali:
-
-  - 24 slot riservati agli estremi ($2 \times 12$);
-
-  - 70 slot riservati ai 14 residui interni ($14 \times 5$);
-
-  - 13 slot riservati alle 13 coppie $k, k+1$ per i crankshaft.
-
-  Gli slot vengono numerati sequenzialmente residuo per residuo, e la mappa esatta tra l'indice numerico di ciascuno slot e la coppia (residuo, tipo di mossa) è salvata nel file `meta.json`. Questa organizzazione rigida consente alla rete neurale di apprendere la scelta dell'azione secondo due modalità flessibili: selezionando direttamente una mossa tra i 107 slot disponibili, oppure effettuando una scelta a due livelli (selezionando prima su quale residuo agire e successivamente quale mossa applicargli).
+- ogni estremo ha 12 slot: 3 end move + 9 pull move di estremo;
 - ogni residuo interno ha 5 slot: corner + 4 pull move;
 - i residui da 1 a N−3 hanno in più lo slot del crankshaft.
 
-#### Esempio
-
-Per una proteina con $N = 16$ residui, il vettore delle azioni è un array unidimensionale di **107 elementi** (slot), indicizzati da 0 a 106, in cui ciascuna posizione corrisponde in modo fisso a una coppia `(residuo, tipo_mossa)`.
-
-A seconda della fase di calcolo, lo stesso vettore da 107 elementi viene rappresentato in tre modi diversi:
-
-1. **Vettore Maschera (`mask`)**: Array binario in cui `1` indica che la mossa di quel dato slot è fisicamente eseguibile nella conformazione attuale e `0` indica che è vietata (es. casella occupata o geometria non valida).
-
-2. **Vettore Target (`optimal_actions`)**: Array binario usato per l'addestramento in cui `1` identifica le mosse ottime (che riducono la distanza dallo stato nativo) e `0` tutte le altre.
-
-3. **Vettore di Output della Rete Neurale**: Array di 107 numeri reali che rappresentano la distribuzione di probabilità calcolata dal modello per ciascuna mossa.
-
-A titolo di esempio, considerando una determinata conformazione della catena, la struttura interna del vettore e la mappatura dei suoi elementi si presenta così:
-
-```
-Indice Slot | Residuo | Tipo Mossa    | Maschera (Valida?) | Target (Ottima?)
-----------------------------------------------------------------------------
-0           | 0       | END_L         | 0 (Non valida)     | 0
-1           | 0       | END_R         | 1 (Valida)         | 0 (Sub-ottimale)
-2           | 0       | END_B         | 0 (Non valida)     | 0
-...         | ...     | ...           | ...                | ...
-15          | 2       | CORNER        | 1 (Valida)         | 1 (Mossa ottima)
-16          | 2       | PULL_NEXT_L   | 1 (Valida)         | 0 (Sub-ottimale)
-...         | ...     | ...           | ...                | ...
-106         | 15      | PULL_END_RR   | 0 (Non valida)     | 0
-```
-
-In Python o in un framework di Deep Learning, l'intero vettore maschera o target associato a quel singolo stato si traduce in un semplice array NumPy o Tensor:
-
-```
-# Vettore target (lunghezza 107)
-target = [0, 0, 0, ..., 1, 0, ..., 0]  # ha valore 1 solo negli slot 15 (e in eventuali altre mosse ottime)
-```
-
-**E per il vettore di output della rete neurale?**
-Il vettore di output della rete neurale è un array di 107 numeri reali (float), con valori compresi tra 0 e 1 in seguito all'applicazione di una funzione di attivazione come la Softmax. Ciascuna posizione $i$ del vettore rappresenta la stima di probabilità del modello che la mossa associata allo slot $i$ sia l'azione migliore da compiere nella conformazione corrente.
-
-A differenza dei vettori binari di `mask` e `optimal_actions` (composti unicamente da 0 e 1), l'output della rete è una distribuzione continua calcolata su tutti i 107 slot. Per impedire che il modello scelga un'azione fisicamente non consentita, il vettore grezzo prodotto dalla rete viene combinato tramite un prodotto elemento per elemento con il vettore `mask`. Gli slot vietati (`mask == 0`) vedono la propria probabilità annullata, e i valori delle mosse valide vengono rinormalizzati affinché la loro somma dia 1.
-
-Un esempio pratico della struttura del vettore di output prima e dopo l'applicazione della maschera si presenta così:
-
-```
-Indice Slot | Residuo | Tipo Mossa    | Output Rete | Maschera | Probabilità Finale
-------------------------------------------------------------------------------------
-0           | 0       | END_L         | 0.08        | 0        | 0.00 (Mossa vietata)
-1           | 0       | END_R         | 0.15        | 1        | 0.18 (Valida)
-...         | ...     | ...           | ...         | ...      | ...
-15          | 2       | CORNER        | 0.62        | 1        | 0.75 (Scelta preferita)
-16          | 2       | PULL_NEXT_L   | 0.06        | 1        | 0.07 (Valida)
-...         | ...     | ...           | ...         | ...      | ...
-106         | 15      | PULL_END_RR   | 0.02        | 0        | 0.00 (Mossa vietata)
-```
-
-- **Output Rete:** È la probabilità grezza calcolata dalla rete neurale per tutti i 107 slot, senza considerare se una mossa sia fisicamente eseguibile o vietata nella conformazione corrente.
-
-- **Probabilità Finale:** È il valore effettivo ricalcolato dopo aver azzerato le probabilità delle mosse vietate (`mask == 0`) e aver rinormalizzato i valori delle sole mosse valide affinché la loro somma sia pari a 1.
-
-
-
-In un framework di Deep Learning (come PyTorch o TensorFlow), l'azzeramento delle mosse non valide e la normalizzazione si gestiscono direttamente a livello di tensor:
-
-```
-# output_rete: tensor (107,) restituito dall'ultimo layer della rete
-# mask: tensor binario (107,) con 1 per le mosse valide e 0 per quelle vietate
-
-output_mascherato = output_rete * mask
-probabilita_finali = output_mascherato / output_mascherato.sum()
-```
-
-L'utilizzo operativo di questo vettore si divide in due contesti differenti:
-
-- **Durante l'addestramento:** Il vettore delle probabilità finale viene confrontato con il vettore target fornito dall'oracolo (`optimal_actions` o `soft_targets`) calcolando la funzione di perdita (ad esempio la *Cross-Entropy Loss*), spingendo la rete ad aumentare i valori di probabilità in corrispondenza degli slot delle mosse ottime.
-
-- **Durante il ripiegamento (inferenza):** L'algoritmo seleziona l'indice dello slot con il valore di probabilità più alto (approccio deterministico o *greedy*) oppure effettua un campionamento probabilistico tra le azioni valide. La mossa corrispondente a tale indice viene quindi applicata alla catena proteica per farla avanzare di un passo verso la conformazione nativa.
+In totale **6N + 11 slot**. Per N = 16: 24 + 70 + 13 = **107**. Gli slot sono numerati residuo per residuo; `meta.json` contiene la tabella che dice, per ogni numero di slot, a quale residuo e a quale tipo corrisponde. Così il modello può scegliere direttamente uno dei 107 slot, oppure prima il residuo e poi il tipo.
 
 ### 6.4 Corrispondenza con le mosse già implementate
 
@@ -487,24 +522,12 @@ Le traiettorie ripulite diventano percorsi di tipo `remc_pruned`. I loro stati v
 
 ---
 
-## 9. Come viene generato
-
-### 9.1 Le sequenze
+## 9. Come vengono generate le sequenze
 
 - La prima è `protein.sequence` della configurazione (se `include_config_sequence = true`).
 - Le altre sono casuali, di lunghezza `protein.length`, con una probabilità `h_fraction` che ogni residuo sia H.
 - **Una sequenza e la sua inversa** (letta dall'ultimo residuo) descrivono la stessa catena: se ne tiene una sola. Altrimenti lo stesso problema potrebbe finire sia nei dati di addestramento sia in quelli di test.
 - Si scartano le sequenze con energia minima 0: ogni stato sarebbe nativo e non ci sarebbe nulla da imparare.
-
-### 9.2 I passi per ogni sequenza
-
-1. **REMC** con i parametri di `[dataset.remc]`, partendo dalla catena dritta. Le temperature arrivano fino a 1,0 (contro 0,22 della fase 1), così tra gli snapshot ci sono anche conformazioni srotolate e non solo compatte.
-2. **Oracolo** (esatto o sul grafo REMC) e calcolo degli stati nativi.
-3. **Pulizia** delle traiettorie dei walker (§8).
-4. **Decoy:** per ogni replica, cioè per ogni temperatura, si scelgono a caso `decoys_per_temperature` snapshot diversi.
-5. **Percorsi ottimi:** da ogni decoy si segue una mossa ottima alla volta fino allo stato nativo. Quando ci sono più mosse ottime se ne sceglie una a caso, con un seed fissato. Nel dataset entrano **tutti** gli stati del percorso, non solo quello di partenza.
-6. **Stati di recupero:** una frazione `perturb_fraction` degli stati dei percorsi viene spostata con 1 … `perturb_max_moves` mosse casuali. Sono stati "fuori strada", simili a quelli in cui finirà il modello dopo un errore, e l'oracolo dice come rientrare.
-7. **Etichette:** si eliminano i doppioni (stessa chiave) e si calcolano le etichette di tutti gli stati in un'unica chiamata C++.
 
 ---
 
@@ -712,4 +735,4 @@ Le note sui singoli file sono in `notes/file_functioning/cpp/include/hp/` e in `
 - **Oltre 16 residui le distanze non sono esatte.** Con l'oracolo sul grafo REMC sono limiti superiori, e la loro qualità dipende da quanto la REMC ha esplorato.
 - **La REMC non è salvata a parte.** I dati grezzi della REMC non vengono scritti in `output.samples_dir`: per rigenerare il dataset si rilancia anche la REMC. Le chiavi `remc.save_every` e `output.samples_dir` di fase 1 restano inutilizzate.
 - **Bilancio dettagliato della fase 1.** Con le mosse a senso unico della §7.6, la REMC campiona la distribuzione di Boltzmann solo in modo approssimato.
-- **Nessuna mossa "stop".** Lo spazio delle azioni contiene solo mosse; per decidere quando fermarsi si può usare `distance == 0` .
+- **Nessuna mossa "stop".** Lo spazio delle azioni contiene solo mosse; per decidere quando fermarsi si può usare `distance == 0`.
