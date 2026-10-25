@@ -8,7 +8,7 @@ Contiene l'**oracolo** che etichetta il dataset (fase 2): il grafo delle conform
 
 - **Usa** [actions.hpp](../../../../../cpp/include/hp/actions.hpp) per le mosse di ogni stato e [canonical.hpp](../../../../../cpp/include/hp/canonical.hpp) per le chiavi.
 - **Implementato in** [state_graph.cpp](../../../../../cpp/src/state_graph.cpp).
-- **Usato da** [bindings.cpp](../../../../../cpp/bindings/bindings.cpp), e da lì da [dataset.py](../../../../../python/hpfold/dataset.py).
+- **Usato da** [bindings.cpp](../../../../../cpp/bindings/bindings.cpp), e da lì da [policy_dataset.py](../../../../../python/hpfold/policy_dataset.py).
 
 ## 2. Componenti
 

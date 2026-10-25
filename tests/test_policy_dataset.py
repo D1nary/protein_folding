@@ -8,7 +8,7 @@ import random
 import numpy as np
 import pytest
 
-from hpfold import _core, dataset
+from hpfold import _core, policy_dataset
 from hpfold.config import load_config
 
 # ----------------------------------------------------------------------
@@ -30,7 +30,7 @@ def transformed(conformation, quarter_turns, flip, margin=3):
     coordinates = np.array(conformation.coordinates)
     if flip:
         coordinates[:, 0] *= -1
-    coordinates = dataset.rotate_coordinates(coordinates, quarter_turns)
+    coordinates = policy_dataset.rotate_coordinates(coordinates, quarter_turns)
     coordinates = coordinates - coordinates.min(axis=0) + margin
     side = int(coordinates.max()) + margin + 1
     return _core.Conformation(
@@ -167,21 +167,21 @@ def test_mirror_of_the_records_matches_the_mirrored_chain():
     sequence = "HPHHPPHPH"
     keys = np.unique([_core.canonical_key(random_state(n, 15, s)) for s in range(10)])
     oracle = _core.Oracle(_core.StateGraph(n, _core.enumerate_states(n)), sequence)
-    batch = {"turns": dataset.keys_to_turns(keys, n), **oracle.label(keys)}
-    mirrored = dataset.mirror(batch, _core.mirror_permutation(n))
+    batch = {"turns": policy_dataset.keys_to_turns(keys, n), **oracle.label(keys)}
+    mirrored = policy_dataset.mirror(batch, _core.mirror_permutation(n))
     for i in range(len(keys)):
         chain = _core.conformation_from_turns(sequence, [int(t) for t in mirrored["turns"][i]])
         assert list(mirrored["mask"][i]) == [bool(m) for m in _core.action_moves(chain)]
-    again = dataset.mirror(mirrored, _core.mirror_permutation(n))
-    for name in dataset.MIRRORED_FIELDS:
+    again = policy_dataset.mirror(mirrored, _core.mirror_permutation(n))
+    for name in policy_dataset.MIRRORED_FIELDS:
         assert np.array_equal(again[name], batch[name])
 
 
 def test_turns_to_coordinates_matches_the_cpp_decoding():
     n = 12
     keys = np.unique([_core.canonical_key(random_state(n, 20, s)) for s in range(15)])
-    turns = dataset.keys_to_turns(keys, n)
-    coordinates = dataset.turns_to_coordinates(turns)
+    turns = policy_dataset.keys_to_turns(keys, n)
+    coordinates = policy_dataset.turns_to_coordinates(turns)
     for key, c in zip(keys, coordinates):
         reference = np.array(_core.conformation_from_key("P" * n, int(key)).coordinates)
         assert np.array_equal(c, reference - reference[0])
@@ -191,7 +191,7 @@ def test_contact_map_gives_the_energy():
     n = 12
     sequence = "HHPHPHHPPHHH"
     keys = np.unique([_core.canonical_key(random_state(n, 25, s)) for s in range(15)])
-    contacts = dataset.contact_map(dataset.turns_to_coordinates(dataset.keys_to_turns(keys, n)))
+    contacts = policy_dataset.contact_map(policy_dataset.turns_to_coordinates(policy_dataset.keys_to_turns(keys, n)))
     h = np.array([c == "H" for c in sequence])
     for key, m in zip(keys, contacts):
         energy = _core.conformation_from_key(sequence, int(key)).energy()
@@ -290,7 +290,7 @@ def small_remc_params(seed=3):
 
 
 def test_recording_does_not_change_the_simulation():
-    initial = dataset.straight_chain("HPHPPHHPHH", 20, 20)
+    initial = policy_dataset.straight_chain("HPHPPHHPHH", 20, 20)
     plain = _core.run_remc(initial, small_remc_params())
     recorder = _core.SampleRecorder(100000, 5)
     recorded = _core.run_remc(initial, small_remc_params(), recorder)
@@ -309,7 +309,7 @@ def test_recording_does_not_change_the_simulation():
 def test_remc_trajectories_get_shorter_at_every_cleaning_step():
     n = 9
     sequence = "HPHPPHHPH"
-    initial = dataset.straight_chain(sequence, 20, 20)
+    initial = policy_dataset.straight_chain(sequence, 20, 20)
     recorder = _core.SampleRecorder(100000, 5)
     _core.run_remc(initial, small_remc_params(seed=11), recorder)
     graph = _core.StateGraph(n, _core.enumerate_states(n))
@@ -338,8 +338,8 @@ def small_config(directory, exact):
     config["protein"]["length"] = 9
     config["protein"]["sequence"] = "HPHPPHHPH"
     config["lattice"] = {"width": 20, "height": 20}
-    config["output"]["dataset_dir"] = str(directory)
-    d = config["dataset"]
+    config["output"]["policy_dataset_dir"] = str(directory)
+    d = config["policy_dataset"]
     d.update(n_sequences=6, decoys_per_temperature=4, exact_max_length=9 if exact else 0,
              max_recorded_steps=20000)
     d["remc"].update(n_replicas=3, local_steps=50, n_cycles=40, save_every=4)
@@ -348,23 +348,23 @@ def small_config(directory, exact):
 
 @pytest.fixture(scope="module", params=["exact", "graph"])
 def built(request, tmp_path_factory):
-    directory = tmp_path_factory.mktemp(f"dataset_{request.param}")
+    directory = tmp_path_factory.mktemp(f"policy_dataset_{request.param}")
     config = small_config(directory, request.param == "exact")
-    dataset.build_dataset(config, verbose=False)
+    policy_dataset.build_dataset(config, verbose=False)
     return directory, config
 
 
 def all_splits(directory):
-    return {s: dataset.load_split(directory, s) for s in dataset.SPLITS
+    return {s: policy_dataset.load_split(directory, s) for s in policy_dataset.SPLITS
             if (directory / f"{s}.npz").exists()}
 
 
 def test_files_and_metadata(built):
     directory, config = built
-    meta = dataset.load_meta(directory)
+    meta = policy_dataset.load_meta(directory)
     assert meta["action_count"] == _core.action_count(9)
-    assert meta["oracle"] == ("exact" if config["dataset"]["exact_max_length"] >= 9 else "graph")
-    sequences = dataset.load_sequences(directory)
+    assert meta["oracle"] == ("exact" if config["policy_dataset"]["exact_max_length"] >= 9 else "graph")
+    sequences = policy_dataset.load_sequences(directory)
     assert len(sequences["sequence"]) == 6
     assert sequences["sequence"][0] == "HPHPPHHPH"
     assert (sequences["e_min"] < 0).all()
@@ -375,13 +375,13 @@ def test_files_and_metadata(built):
 
 def test_splits_do_not_share_sequences(built):
     directory, _ = built
-    sequences = dataset.load_sequences(directory)
+    sequences = policy_dataset.load_sequences(directory)
     seen = set()
     for name, data in all_splits(directory).items():
         ids = set(np.unique(data["seq_id"]).tolist())
         assert not ids & seen
         seen |= ids
-        assert all(dataset.SPLITS[sequences["split"][i]] == name for i in ids)
+        assert all(policy_dataset.SPLITS[sequences["split"][i]] == name for i in ids)
     assert seen == set(range(len(sequences["sequence"])))
     # A sequence and its reverse are the same chain: only one of them is used.
     groups = [min(q, q[::-1]) for q in sequences["sequence"]]
@@ -399,23 +399,23 @@ def test_masks_are_those_of_the_cpp_move_set(built):
 
 def test_every_state_has_an_optimal_action_or_is_native(built):
     directory, _ = built
-    sequences = dataset.load_sequences(directory)
+    sequences = policy_dataset.load_sequences(directory)
     for data in all_splits(directory).values():
-        optimal = dataset.optimal_actions(data["next_distance"], data["distance"])
+        optimal = policy_dataset.optimal_actions(data["next_distance"], data["distance"])
         assert (data["distance"] >= 0).all()
         assert (optimal.any(axis=1) == (data["distance"] > 0)).all()
         assert ((data["distance"] == 0) ==
                 (data["energy"] == sequences["e_min"][data["seq_id"]])).all()
-        soft = dataset.soft_targets(data["next_distance"], data["distance"])
+        soft = policy_dataset.soft_targets(data["next_distance"], data["distance"])
         assert np.allclose(soft.sum(axis=1), data["distance"] > 0)
 
 
 def test_every_path_ends_in_the_native_state(built):
     directory, _ = built
-    sequences = dataset.load_sequences(directory)
+    sequences = policy_dataset.load_sequences(directory)
     for data in all_splits(directory).values():
         count = 0
-        for kind, records, actions in dataset.paths(data):
+        for kind, records, actions in policy_dataset.paths(data):
             count += 1
             last = records[-1]
             assert data["distance"][last] == 0
@@ -426,7 +426,7 @@ def test_every_path_ends_in_the_native_state(built):
                 target = _core.turns_key([int(t) for t in data["turns"][nxt]])
                 assert (int(action), target) in _core.successors(9, key)
                 assert data["next_distance"][r, action] == data["distance"][nxt]
-                if dataset.PATH_KINDS[kind] == "oracle":
+                if policy_dataset.PATH_KINDS[kind] == "oracle":
                     assert data["distance"][nxt] == data["distance"][r] - 1
         assert count > 0
 
@@ -448,13 +448,13 @@ def test_trajectory_lengths_shrink_with_cleaning(built):
 
 def test_augmentation_mirrors_about_half_of_the_records(built):
     directory, _ = built
-    data = dataset.load_split(directory, "train")
-    permutation = dataset.load_meta(directory)["mirror_permutation"]
-    out = dataset.augment(data, permutation, np.random.default_rng(0))
+    data = policy_dataset.load_split(directory, "train")
+    permutation = policy_dataset.load_meta(directory)["mirror_permutation"]
+    out = policy_dataset.augment(data, permutation, np.random.default_rng(0))
     changed = (out["turns"] != data["turns"]).any(axis=1)
     straight = (data["turns"] == 0).all(axis=1)
     assert 0.3 < changed[~straight].mean() < 0.7
     assert np.array_equal(out["distance"], data["distance"])
-    grid = dataset.lattice_grid(dataset.turns_to_coordinates(out["turns"]), out["hp"])
+    grid = policy_dataset.lattice_grid(policy_dataset.turns_to_coordinates(out["turns"]), out["hp"])
     assert grid.shape == (len(data["turns"]), 3, 9, 9)
     assert np.array_equal(grid[:, 0].sum(axis=(1, 2)), out["hp"].sum(axis=1))

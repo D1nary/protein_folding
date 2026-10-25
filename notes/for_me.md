@@ -28,25 +28,25 @@ conformazione migliore in `output.native_conformation`
 ## Fase 2: dataset
 
 ```bash
-python -m hpfold --config config/default.toml dataset
+python -m hpfold --config config/default.toml policy_dataset
 ```
 
 
 
-Costruisce il dataset per la policy di folding in `output.dataset_dir`. Non usa
+Costruisce il dataset per la policy di folding in `output.policy_dataset_dir`. Non usa
 né la GUI né `initial_conformation.json`.
 
-- Sequenze: `dataset.n_sequences` (100) di lunghezza `protein.length`. La prima
+- Sequenze: `policy_dataset.n_sequences` (100) di lunghezza `protein.length`. La prima
   è `protein.sequence` (se `include_config_sequence = true`), le altre sono
   casuali (H con probabilità `h_fraction`). Una sequenza e la sua inversa
   contano come una sola; quelle con energia minima 0 vengono scartate.
-- Per ogni sequenza lancia un REMC più corto (`[dataset.remc]`) da una catena
+- Per ogni sequenza lancia un REMC più corto (`[policy_dataset.remc]`) da una catena
   dritta al centro del reticolo; gli stati visitati forniscono decoy e
   traiettorie.
 - Le etichette (mosse valide, distanza dal nativo, ΔE) vengono da un oracolo
   (BFS sul grafo delle mosse): esatto fino a `exact_max_length` residui,
   altrimenti calcolato sul grafo degli stati visitati dal REMC.
-- Split per sequenza in train/val/test secondo `dataset.split` (80/10/10).
+- Split per sequenza in train/val/test secondo `policy_dataset.split` (80/10/10).
 - Output: `train.npz`, `val.npz`, `test.npz`, `sequences.npz`,
   `trajectories.csv`, `meta.json`. Dettagli in `notes/dataset.md`.
 

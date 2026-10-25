@@ -14,7 +14,8 @@ implementata (il file contiene uno scheletro e un `TODO`).
 |---|---|---|
 | 0 | GUI per disegnare la configurazione iniziale | `python/hpfold/gui.py`, `python/hpfold/conformation.py` |
 | 1 | Ricerca dello stato nativo con REMC | `cpp/`, `python/hpfold/simulation.py` |
-| 2 | Dataset per la policy di folding (stati, mosse valide, mosse ottime) | `cpp/` (azioni, oracolo, registrazione REMC), `python/hpfold/dataset.py` |
+| 2 | Dataset per la policy di folding (stati, mosse valide, mosse ottime) | `cpp/` (azioni, oracolo, registrazione REMC), `python/hpfold/policy_dataset.py` |
+| 2b | Dataset per il decoy discriminator (conformazioni native / decoy) | `python/hpfold/discriminator_dataset.py` |
 | 3 | Addestramento del modello di ML | `python/hpfold/ml.py` |
 
 ## Struttura
@@ -43,7 +44,8 @@ protein_folding/
 │   ├── conformation.py       # fase 0: logica (catena, validazione, JSON)
 │   ├── gui.py                # fase 0: finestra Tkinter
 │   ├── simulation.py         # fase 1 (chiama hpfold._core)
-│   ├── dataset.py            # fase 2
+│   ├── policy_dataset.py     # fase 2
+│   ├── discriminator_dataset.py # fase 2b
 │   └── ml.py                 # fase 3
 ├── tests/
 │   ├── test_smoke.py         # l'estensione si importa, la config si legge
@@ -51,7 +53,8 @@ protein_folding/
 │   ├── test_gui.py           # parti della GUI che non aprono finestre
 │   ├── test_core.py          # nucleo C++: energia, mosse VSHD e pull
 │   ├── test_simulation.py    # fase 1: REMC, riproducibilità, output
-│   └── test_dataset.py       # fase 2: azioni, simmetrie, oracolo, file
+│   ├── test_policy_dataset.py # fase 2: azioni, simmetrie, oracolo, file
+│   └── test_discriminator_dataset.py # fase 2b: etichette, bilanciamento, split
 ├── data/
 │   ├── input/                # configurazione iniziale disegnata con la GUI
 │   └── output/               # conformazione nativa, campioni (non versionato)
@@ -115,7 +118,8 @@ cmake -S . -B build/clangd -DPython_EXECUTABLE="$PWD/.venv/bin/python" \
 python -m hpfold --config config/default.toml gui       # fase 0
 python -m hpfold --config config/default.toml simulate  # fase 1
 python -m hpfold --config config/default.toml verify    # verifica della fase 1 (facoltativa)
-python -m hpfold --config config/default.toml dataset   # fase 2
+python -m hpfold --config config/default.toml policy_dataset         # fase 2
+python -m hpfold --config config/default.toml discriminator_dataset  # fase 2b
 python -m hpfold --config config/default.toml train     # fase 3
 ```
 
@@ -198,21 +202,52 @@ Come funziona:
 
 A parità di `seed` (e di macchina e compilatore) la simulazione è
 riproducibile. `remc.save_every` e `output.samples_dir` non sono usati: la
-fase 2 lancia una propria REMC per ogni sequenza (`[dataset.remc]`) e
+fase 2 lancia una propria REMC per ogni sequenza (`[policy_dataset.remc]`) e
 registra gli stati visitati in memoria.
 
-### Fase 2: dataset
+### Fase 2: dataset per la policy (`policy_dataset`)
 
 ```bash
-python -m hpfold --config config/default.toml dataset
+python -m hpfold --config config/default.toml policy_dataset
 ```
+
+I file vanno in `output.policy_dataset_dir` (`data/output/datasets/policy_dataset/`).
 
 Per molte sequenze casuali di lunghezza `protein.length`, raccoglie stati
 dalla REMC e li etichetta con un oracolo (ricerca in ampiezza sul grafo delle
 mosse): per ogni stato le mosse valide, la distanza dallo stato nativo dopo
-ogni mossa e il ΔE di ogni mossa. Fino a `dataset.exact_max_length` residui
+ogni mossa e il ΔE di ogni mossa. Fino a `policy_dataset.exact_max_length` residui
 (16) l'oracolo è esatto. Formato, scelte e lettura dei file sono in
 `notes/dataset.md`.
+
+### Fase 2b: dataset per il decoy discriminator (`discriminator_dataset`)
+
+```bash
+python -m hpfold --config config/default.toml discriminator_dataset
+```
+
+Pipeline indipendente dalla fase 2 (sezioni `[discriminator_dataset]` e
+`[discriminator_dataset.remc]`, cartella `output.discriminator_dataset_dir` =
+`data/output/datasets/discriminator_dataset/`). Per ogni sequenza casuale una
+REMC parte dalla catena dritta e registra traiettorie e snapshot:
+
+- **nativi (label 1)**: tutti gli stati distinti all'energia minima raggiunta,
+  fino a `examples_per_class`; fino a `exact_check_max_length` residui il
+  minimo è confrontato con l'enumerazione esatta e le sequenze in cui la REMC
+  non l'ha raggiunto sono scartate;
+- **decoy (label 0)**: stati visitati con energia strettamente maggiore, tanti
+  quanti i nativi (1:1 per sequenza), divisi in tre fasce di difficoltà per gap
+  relativo a |E_min| (`near`, `mid`, `far`); nella fascia `near` si
+  privilegiano le trappole cinetiche (minimi locali per il move set).
+
+Le conformazioni sono deduplicate con la chiave canonica (traslazioni,
+rotazioni e riflessioni contano una volta) e lo split è per sequenza. File:
+`train.csv`, `val.csv`, `test.csv` (una riga per esempio: sequenza, mosse
+relative `turns` F/L/R, coordinate, energia, gap, label, fascia, trappola,
+sovrapposizione dei contatti col nativo, provenienza REMC: walker, replica,
+temperatura, ciclo, passo), `sequences.csv`, `meta.json` e `report.txt` (lo
+stesso riepilogo stampato a fine esecuzione). `discriminator_dataset.load_split`
+li rilegge come array numpy.
 
 ### Verifica della fase 1: enumerazione esatta
 

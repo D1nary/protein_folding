@@ -37,7 +37,7 @@ Avviene in tre passaggi, e il C++ non vede mai il file TOML:
 
 Lo stesso vale per la conformazione iniziale: sequenza e coordinate vengono lette dal JSON in Python e pybind11 le converte in `std::string` e `std::vector<Coord>` quando si costruisce `_core.Conformation`.
 
-*Nota:* le chiavi `remc.save_every` e `output.samples_dir` sono presenti in [default.toml](../../../config/default.toml) ma non vengono lette da nessun file: la fase 2 ([dataset.py](../../../python/hpfold/dataset.py)) lancia una propria REMC per ogni sequenza, con i parametri di `[dataset.remc]`, e registra in memoria gli stati visitati con un `SampleRecorder`. Dal `RemcResult` vengono inoltre usati solo `best`, `best_energy`, `swap_attempts` e `swap_accepted`; `temperatures` e `final_energies` restano inutilizzati.
+*Nota:* le chiavi `remc.save_every` e `output.samples_dir` sono presenti in [default.toml](../../../config/default.toml) ma non vengono lette da nessun file: la fase 2 ([policy_dataset.py](../../../python/hpfold/policy_dataset.py)) lancia una propria REMC per ogni sequenza, con i parametri di `[policy_dataset.remc]`, e registra in memoria gli stati visitati con un `SampleRecorder`. Dal `RemcResult` vengono inoltre usati solo `best`, `best_energy`, `swap_attempts` e `swap_accepted`; `temperatures` e `final_energies` restano inutilizzati.
 
 ## In sintesi
 

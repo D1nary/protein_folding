@@ -2,7 +2,7 @@
 
 import argparse
 
-from hpfold import dataset, gui, ml, simulation, verification
+from hpfold import discriminator_dataset, gui, ml, policy_dataset, simulation, verification
 from hpfold.config import load_config
 
 # Maps each phase name accepted on the command line to the function that runs
@@ -13,7 +13,10 @@ PHASES = {
     "gui": gui.run,
     "simulate": simulation.run,
     "verify": verification.run,
-    "dataset": dataset.run,
+    # Dataset for the folding policy.
+    "policy_dataset": policy_dataset.run,
+    # Dataset of natives and decoys for the decoy discriminator.
+    "discriminator_dataset": discriminator_dataset.run,
     "train": ml.run,
 }
 

@@ -5,10 +5,10 @@ Questa nota raccoglie tutto quello che riguarda il dataset: a cosa serve, come �
 Per generarlo:
 
 ```bash
-python -m hpfold --config config/default.toml dataset
+python -m hpfold --config config/default.toml policy_dataset
 ```
 
-I file finiscono nella cartella `output.dataset_dir` (di default `data/output/dataset/`).
+I file finiscono nella cartella `output.policy_dataset_dir` (di default `data/output/datasets/policy_dataset/`).
 
 Nella fase 3 un modello di machine learning dovrà imparare a **ripiegare la proteina un passo alla volta**: parte da una conformazione srotolata e, mossa dopo mossa, la porta fino allo stato nativo (la conformazione a energia minima).
 
@@ -38,13 +38,13 @@ L'algorimo riceve in ingresso un **record** ovvero una “fotografia” della pr
 
 - **Conformazione attuale (`turns`):** Cioè la catena descritta come una serie di “dritto / sinistra / destra”
 
-- **Energia attuale (`energy`):** Il valore energetico scalare della conformazione corrente.
+- **Energia attuale (`energy`):** Il valore energetico scalare della conformazione.
 
 - **Maschera delle mosse valide (`mask`):** Vettore binario di dimensione fissa $A = 6N + 11$ (es. **107 slot** per una catena di $N=16$ residui). Ogni slot vale `1` se la mossa è fisicamente eseguibile senza sovrapposizioni sulla griglia, `0` se è vietata.
 
 Per quanto riguarda il target ricevuto in ingresso dall'algoritmo, esso non è prodotto dalla simulazione casuale REMC, ma viene calcolata da un **Oracolo** (tramite un algoritmo BFS sui cammini minimi). In particolare si ha: 
 
-- **Quanto manca alla fine** (`distance`): la distanza di una conformazione è il numero minimo di mosse che servono per portarla allo stato nativo calcolata dall'oracolo. L’oracolo la calcola con una BFS che parte dagli stati nativi e procede all’indietro nel grafo delle mosse. Uno stato nativo ha distanza **0**. Fino a 16 residui il valore è esatto.
+- **Quanto manca alla fine** (`distance`): la distanza di una conformazione è il numero minimo di mosse che servono per portarla allo stato nativo calcolato dall'oracolo. L’oracolo la calcola con una BFS che parte dagli stati nativi e procede all’indietro nel grafo delle mosse. Uno stato nativo ha distanza **0**. Fino a 16 residui il valore è esatto.
 
 - **Dove porta ogni mossa** (`next_distance`): per ogni slot di mossa, `next_distance` indica la distanza dallo stato nativo della conformazione in cui ci si trova dopo averla fatta. **−1** vuol dire che la mossa è impossibile. Le **mosse ottime** sono quelle che portano da distanza *d* a distanza *d − 1*, cioè avvicinano di un passo allo stato nativo.
 
@@ -162,7 +162,7 @@ Somiglia a chi impara a guidare solo restando al centro della corsia: la prima v
 1. Si prendono **tutti gli stati raccolti fino a quel momento** per la sequenza: decoy, stati dei percorsi ottimi e stati delle traiettorie ripulite.
 2. Se ne sceglie a caso **il 25%** (`perturb_fraction = 0.25`), senza ripetizioni.
 3. Per ognuno si estrae un numero di passi **k tra 1 e 3** (`perturb_max_moves = 3`).
-4. Si fanno **k mosse casuali tra quelle possibili**, ognuna con la stessa probabilità (`random_walk`, dataset.py:138). Non sono scelte per forza mosse sbagliate: è una spinta a caso.
+4. Si fanno **k mosse casuali tra quelle possibili**, ognuna con la stessa probabilità (`random_walk`). Non sono scelte per forza mosse sbagliate: è una spinta a caso.
 5. Lo stato in cui si arriva diventa un nuovo record con `source = perturbed`.
 
 **Le etichette:**
@@ -172,6 +172,21 @@ Come per tutti gli altri record, l’oracolo calcola distanza, mosse possibili e
 **Obiettivo del record:** 
 
 **Correggere gli errori.** Quando il modello sbaglia una mossa, finisce in stati che i percorsi ottimi non toccano mai. Questi record gli insegnano a rientrare in strada, così un errore non si somma al successivo. È il problema dell’accumulo dell’errore
+
+
+
+### Distribuzione dei record nello **split di train** (60 739 record in totale):
+
+```
+remc_pruned    ████████████████████▉     42,2 %   (25 635)
+oracle_path    ████████████▉             25,8 %   (15 676)
+perturbed      █████████▋                19,4 %   (11 756)
+remc_snapshot  ██████▎                   12,6 %   ( 7 672)
+```
+
+Quasi metà dei record viene dalle traiettorie ripulite. I punti di partenza puri (snapshot) sono la parte più piccola, perché ogni snapshot genera poi un intero percorso ottimo.
+
+Questi numeri sono quelli scritti in [notes/dataset.md:668](https://claude.ai/epitaxy/notes/dataset.md:668) per il dataset di default. Valgono solo per il train: per validation e test la nota non riporta la ripartizione.
 
 ---
 
@@ -608,14 +623,14 @@ Ogni percorso finisce in uno stato nativo (test `test_every_path_ends_in_the_nat
 ### 12.1 Lettura e codifiche
 
 ```python
-from hpfold import dataset
+from hpfold import policy_dataset
 
-data = dataset.load_split("data/output/dataset", "train")
-meta = dataset.load_meta("data/output/dataset")
+data = policy_dataset.load_split("data/output/datasets/policy_dataset", "train")
+meta = policy_dataset.load_meta("data/output/datasets/policy_dataset")
 
-coords = dataset.turns_to_coordinates(data["turns"])   # coordinate (S, N, 2)
-contacts = dataset.contact_map(coords)                 # matrice di contatto (S, N, N)
-grid = dataset.lattice_grid(coords, data["hp"])        # immagine del reticolo (S, 3, N, N)
+coords = policy_dataset.turns_to_coordinates(data["turns"])   # coordinate (S, N, 2)
+contacts = policy_dataset.contact_map(coords)                 # matrice di contatto (S, N, N)
+grid = policy_dataset.lattice_grid(coords, data["hp"])        # immagine del reticolo (S, 3, N, N)
 ```
 
 I turni sono la codifica "a mosse relative"; da questi si ottengono coordinate, matrice di contatto e griglia. La griglia ha tre canali: residui H, residui P e posizione lungo la catena.
@@ -623,12 +638,12 @@ I turni sono la codifica "a mosse relative"; da questi si ottengono coordinate, 
 ### 12.2 Le risposte giuste (target)
 
 ```python
-target = dataset.optimal_actions(data["next_distance"], data["distance"])
+target = policy_dataset.optimal_actions(data["next_distance"], data["distance"])
 ```
 
 restituisce, per ogni record, vero sugli slot delle mosse ottime (più di uno può essere vero). In alternativa:
 
-- `dataset.soft_targets(next_distance, distance)` dà una distribuzione uniforme sulle mosse ottime;
+- `policy_dataset.soft_targets(next_distance, distance)` dà una distribuzione uniforme sulle mosse ottime;
 - aggiungendo `next_energy_delta` e una `temperature`, le mosse ottime che abbassano l'energia pesano di più.
 
 Gli stati nativi (distanza 0) non hanno mosse ottime. Se il modello deve anche capire quando fermarsi, `distance == 0` può fare da etichetta "stop".
@@ -639,8 +654,8 @@ Ogni stato è salvato **una sola volta**, in forma canonica. Salvare anche le co
 
 Le simmetrie si applicano invece al caricamento:
 
-- **Specchio:** `dataset.augment(batch, meta["mirror_permutation"], rng)` specchia metà dei record a caso. Scambia LEFT e RIGHT nei turni e sposta gli slot delle mosse secondo `mirror_permutation` (per esempio `PULL_NEXT_L` ↔ `PULL_NEXT_R`). Energia e distanza non cambiano. **Questo passo è necessario:** senza, il modello vedrebbe solo catene il cui primo turno è a sinistra.
-- **Rotazione:** serve solo alla codifica a griglia. `dataset.rotate_coordinates` ruota le coordinate di 90°, e le etichette restano le stesse.
+- **Specchio:** `policy_dataset.augment(batch, meta["mirror_permutation"], rng)` specchia metà dei record a caso. Scambia LEFT e RIGHT nei turni e sposta gli slot delle mosse secondo `mirror_permutation` (per esempio `PULL_NEXT_L` ↔ `PULL_NEXT_R`). Energia e distanza non cambiano. **Questo passo è necessario:** senza, il modello vedrebbe solo catene il cui primo turno è a sinistra.
+- **Rotazione:** serve solo alla codifica a griglia. `policy_dataset.rotate_coordinates` ruota le coordinate di 90°, e le etichette restano le stesse.
 
 Il test `test_rotations_keep_the_actions_and_reflections_permute_them` controlla che ruotando e specchiando davvero la catena, e ricalcolando le mosse in C++, si ottenga esattamente quello che prevedono le due regole.
 
@@ -656,7 +671,7 @@ La stessa conformazione può comparire in insiemi diversi con sequenze diverse. 
 
 ## 14. Parametri (`config/default.toml`)
 
-### `[dataset]`
+### `[policy_dataset]`
 
 | Parametro                 | Default         | Significato                                                                                                  |
 | ------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------ |
@@ -671,7 +686,7 @@ La stessa conformazione può comparire in insiemi diversi con sequenze diverse. 
 | `perturb_max_moves`       | 3               | massimo numero di mosse casuali per creare uno stato di recupero                                             |
 | `max_recorded_steps`      | 50000           | mosse registrate al massimo per ogni walker                                                                  |
 
-### `[dataset.remc]`
+### `[policy_dataset.remc]`
 
 La REMC lanciata per ogni sequenza: stesse chiavi di `[remc]` (`n_replicas`, `t_min`, `t_max`, `local_steps`, `n_cycles`, `rho`, `seed`), più `save_every`, cioè ogni quanti cicli salvare uno snapshot. È più corta della REMC di fase 1 e arriva a temperature più alte. La sequenza i usa il seme `seed + i`.
 
@@ -709,8 +724,8 @@ Le parti che lavorano su milioni di stati sono in C++; le scelte e i file sono i
 | [sample_writer.hpp](../cpp/include/hp/sample_writer.hpp) | `SampleRecorder`: registrazione delle traiettorie e degli snapshot REMC (§8.1)                             |
 | [remc.hpp](../cpp/include/hp/remc.hpp)                   | `run_remc` accetta un `SampleRecorder` facoltativo                                                         |
 | [bindings.cpp](../cpp/bindings/bindings.cpp)             | espone tutto a Python; i risultati grandi arrivano come array numpy                                        |
-| [dataset.py](../python/hpfold/dataset.py)                | sequenze, scelta degli stati, split, scrittura e lettura dei file, codifiche, simmetrie (§9, §11, §12)     |
-| [test_dataset.py](../tests/test_dataset.py)              | i test (§17)                                                                                               |
+| [policy_dataset.py](../python/hpfold/policy_dataset.py)                | sequenze, scelta degli stati, split, scrittura e lettura dei file, codifiche, simmetrie (§9, §11, §12)     |
+| [test_policy_dataset.py](../tests/test_policy_dataset.py)              | i test (§17)                                                                                               |
 
 Le note sui singoli file sono in `notes/file_functioning/cpp/include/hp/` e in `notes/python/hpfold/dataset.md`.
 
@@ -718,7 +733,7 @@ Le note sui singoli file sono in `notes/file_functioning/cpp/include/hp/` e in `
 
 ## 17. Cosa verificano i test
 
-`tests/test_dataset.py` controlla:
+`tests/test_policy_dataset.py` controlla:
 
 - **azioni:** il numero e l'ordine degli slot; la permutazione per lo specchio scambia davvero sinistra e destra; ogni mossa di fase 1 ha esattamente uno slot; ogni mossa della maschera lascia una catena valida;
 - **forma canonica:** la chiave non cambia con rotazioni, riflessioni e traslazioni; il numero di conformazioni elencate coincide con quello noto (2, 13, 272, 2034 per N = 3, 5, 8, 10); le coordinate ricavate in Python coincidono con quelle del C++; la matrice di contatto ridà l'energia;

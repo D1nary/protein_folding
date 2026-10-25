@@ -1,4 +1,4 @@
-# `python/hpfold/dataset.py`
+# `python/hpfold/policy_dataset.py`
 
 ## 1. Scopo generale del file
 
@@ -14,8 +14,8 @@ Le scelte di progetto e il formato dei file sono descritti in [notes/dataset.md]
 **Come si inserisce nel progetto:**
 
 - **Usa** l'estensione `hpfold._core` (`SampleRecorder`, `run_remc`, `StateGraph`, `Oracle`, `prune_trajectory`, `successors`, `action_table`, …) e numpy.
-- **Legge** dalla configurazione le sezioni `[protein]` (`length`, `sequence`), `[lattice]`, `[dataset]`, `[dataset.remc]` e `[output]` (`dataset_dir`).
-- **Usato da** [\_\_main\_\_.py](../../../python/hpfold/__main__.py) (fase `dataset`) e da [test_dataset.py](../../../tests/test_dataset.py). In fase 3, `ml.py` leggerà il dataset con `load_split`.
+- **Legge** dalla configurazione le sezioni `[protein]` (`length`, `sequence`), `[lattice]`, `[policy_dataset]`, `[policy_dataset.remc]` e `[output]` (`policy_dataset_dir`).
+- **Usato da** [\_\_main\_\_.py](../../../python/hpfold/__main__.py) (fase `policy_dataset`) e da [test_policy_dataset.py](../../../tests/test_policy_dataset.py). In fase 3, `ml.py` leggerà il dataset con `load_split`.
 
 ## 2. Componenti
 

@@ -116,9 +116,9 @@ def straight_chain(sequence: str, width: int, height: int) -> _core.Conformation
 
 
 def sample_remc(sequence: str, seq_id: int, config: dict):
-    """Runs the REMC of `[dataset.remc]` and returns the recorder and the result."""
+    """Runs the REMC of `[policy_dataset.remc]` and returns the recorder and the result."""
     lattice = config["lattice"]
-    dataset = config["dataset"]
+    dataset = config["policy_dataset"]
     remc = dataset["remc"]
     params = _core.RemcParams(
         n_replicas=remc["n_replicas"],
@@ -152,7 +152,7 @@ def sequence_records(sequence: str, seq_id: int, config: dict, full_graph=None):
     native and there would be nothing to learn.
     """
     n = len(sequence)
-    dataset = config["dataset"]
+    dataset = config["policy_dataset"]
     rng = np.random.default_rng([dataset["seed"], seq_id])
 
     # 1. States visited by the REMC: walkers' trajectories and snapshots.
@@ -314,9 +314,9 @@ def _git_commit():
 
 
 def build_dataset(config: dict, verbose: bool = True) -> Path:
-    """Generates the dataset in `output.dataset_dir` and returns the directory."""
+    """Generates the dataset in `output.policy_dataset_dir` and returns the directory."""
     n = config["protein"]["length"]
-    dataset = config["dataset"]
+    dataset = config["policy_dataset"]
     if n < 3 or n > _core.MAX_KEY_LENGTH:
         raise ValueError(f"protein.length must be between 3 and {_core.MAX_KEY_LENGTH}")
 
@@ -352,7 +352,7 @@ def build_dataset(config: dict, verbose: bool = True) -> Path:
             )
 
     split = assign_splits(len(parts), dataset["split"], rng)
-    out = Path(config["output"]["dataset_dir"])
+    out = Path(config["output"]["policy_dataset_dir"])
     out.mkdir(parents=True, exist_ok=True)
     n_actions = _core.action_count(n)
 
@@ -400,7 +400,7 @@ def build_dataset(config: dict, verbose: bool = True) -> Path:
         "unknown_distance": _core.UNKNOWN_DISTANCE,
         "oracle": "exact" if full_graph is not None else "graph",
         "records": counts,
-        "config": {"dataset": dataset, "lattice": config["lattice"]},
+        "config": {"policy_dataset": dataset, "lattice": config["lattice"]},
         "git_commit": _git_commit(),
     }
     with open(out / "meta.json", "w") as f:

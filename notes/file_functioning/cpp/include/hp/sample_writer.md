@@ -8,7 +8,7 @@ Registra le configurazioni visitate dalla REMC per costruire il dataset (fase 2)
 
 - **Usa** [conformation.hpp](../../../../../cpp/include/hp/conformation.hpp) e, nell'implementazione, [canonical.hpp](../../../../../cpp/include/hp/canonical.hpp) per le chiavi.
 - **Implementato in** [sample_writer.cpp](../../../../../cpp/src/sample_writer.cpp).
-- **Usato da** [remc.cpp](../../../../../cpp/src/remc.cpp): `run_remc` riceve un puntatore opzionale a `SampleRecorder`. Python lo crea in [dataset.py](../../../../../python/hpfold/dataset.py) (`sample_remc`).
+- **Usato da** [remc.cpp](../../../../../cpp/src/remc.cpp): `run_remc` riceve un puntatore opzionale a `SampleRecorder`. Python lo crea in [policy_dataset.py](../../../../../python/hpfold/policy_dataset.py) (`sample_remc`).
 
 ## 2. Componenti
 

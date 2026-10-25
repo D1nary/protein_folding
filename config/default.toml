@@ -54,9 +54,12 @@ max_length = 25     # longest chain verified by exact enumeration
 # Lowest-energy conformation found by the REMC (phase 1).
 native_conformation = "data/output/native_conformation.json"
 samples_dir = "data/output/samples"   # intermediate configurations written by the C++ code
-dataset_dir = "data/output/dataset"   # labelled dataset (phase 2)
+# Labelled dataset for the folding policy (phase `policy_dataset`).
+policy_dataset_dir = "data/output/datasets/policy_dataset"
+# Natives and decoys for the decoy discriminator (phase `discriminator_dataset`).
+discriminator_dataset_dir = "data/output/datasets/discriminator_dataset"
 
-[dataset]
+[policy_dataset]
 # Labelled dataset for the folding policy (phase 2): states of many sequences
 # of length protein.length, each with the feasible actions and their distance
 # from the native state. See notes/dataset.md.
@@ -75,7 +78,7 @@ perturb_fraction = 0.25         # recovery states, as a fraction of the path sta
 perturb_max_moves = 3           # random moves that push a path state off course
 max_recorded_steps = 50000      # accepted moves recorded for every walker
 
-[dataset.remc]
+[policy_dataset.remc]
 # REMC run for every sequence of the dataset, shorter than the one of phase 1.
 # The ladder goes to higher temperatures than [remc] so that the snapshots
 # also contain unfolded conformations, not only compact ones.
@@ -87,6 +90,41 @@ n_cycles = 200
 rho = 0.4
 save_every = 2      # cycles between two snapshots of the replicas
 seed = 42           # seed of the first sequence; sequence i uses seed + i
+
+[discriminator_dataset]
+# Dataset for the decoy discriminator (phase `discriminator_dataset`): pairs
+# (sequence, conformation) labelled native (1) or decoy (0), with their energy.
+# Independent of [policy_dataset]; see python/hpfold/discriminator_dataset.py.
+n_sequences = 2000              # sequences in the dataset (lowest energy < 0)
+length = 16                     # residues of every sequence
+h_fraction = 0.5                # probability that a residue of a random sequence is H
+seed = 11                       # sequences, splits, choice of the examples
+split = [0.8, 0.1, 0.1]         # fractions of train, val, test, by sequence
+# Natives per sequence: all the degenerate states at the lowest energy found,
+# up to this number. Each sequence gets as many decoys as natives (1:1).
+examples_per_class = 20
+# Tiers of difficulty of the decoys, by gap from the lowest energy relative to
+# |E_min|: near up to tier_edges[0], mid up to tier_edges[1], far above (a gap
+# of 1 is always near). The decoys are split evenly among the tiers.
+tier_edges = [0.34, 0.67]
+trap_fraction = 0.5             # share of the near tier reserved to kinetic traps
+trap_search_limit = 200         # near candidates examined to find kinetic traps
+# Up to this length the lowest energy of the REMC is checked against exact
+# enumeration: sequences whose ground state was not reached are dropped.
+exact_check_max_length = 20
+max_recorded_steps = 50000      # accepted moves recorded for every walker
+
+[discriminator_dataset.remc]
+# REMC run for every sequence of this dataset. Long enough to reach the ground
+# state (and its degenerate copies), with hot replicas for far decoys.
+n_replicas = 5
+t_min = 0.160
+t_max = 0.600
+local_steps = 100
+n_cycles = 500
+rho = 0.4
+save_every = 2      # cycles between two snapshots of the replicas
+seed = 1000         # seed of the first sequence; sequence i uses seed + i
 
 # [ml]
 # Model and training parameters: to be defined in phase 3.
