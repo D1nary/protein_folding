@@ -58,6 +58,8 @@ samples_dir = "data/output/samples"   # intermediate configurations written by t
 policy_dataset_dir = "data/output/datasets/policy_dataset"
 # Natives and decoys for the decoy discriminator (phase `discriminator_dataset`).
 discriminator_dataset_dir = "data/output/datasets/discriminator_dataset"
+# Trained decoy discriminator, metrics and predictions (phase `discriminator_train`).
+discriminator_model_dir = "data/output/models/discriminator"
 
 [policy_dataset]
 # Labelled dataset for the folding policy (phase 2): states of many sequences
@@ -125,6 +127,30 @@ n_cycles = 500
 rho = 0.4
 save_every = 2      # cycles between two snapshots of the replicas
 seed = 1000         # seed of the first sequence; sequence i uses seed + i
+
+[discriminator_model]
+# Decoy discriminator (phase `discriminator_train`), trained on the dataset of
+# output.discriminator_dataset_dir: a GNN on the contact graph (conformation)
+# and a 1D CNN on the HP string (sequence), with auxiliary heads for energy,
+# lowest energy and gap. See notes/discriminator_model.md.
+seed = 0                        # initial weights, order of the batches, augmentation
+hidden = 64                     # size of the vectors of the residues and of the hidden layers
+gnn_layers = 4                  # message-passing layers of the conformation branch
+cnn_layers = 4                  # convolutional layers of the sequence branch
+cnn_kernel = 5                  # residues seen by one filter (odd)
+dropout = 0.1                   # in the MLP heads
+# Weights of the MSE of the auxiliary heads, added to the BCE of the label.
+# 0 switches a head off (ablation: all 0 = classifier only).
+loss_weights = { energy = 0.1, e_min = 0.1, gap = 0.1 }
+learning_rate = 1e-3
+weight_decay = 1e-4
+batch_size = 256
+max_epochs = 60
+patience = 10                   # epochs without a better val AUROC before stopping
+augment_reverse = true          # half of each batch read from the other end of the chain
+train_sequences = 0             # train sequences used, chosen at random (0 = all): learning curves
+baselines = ["B0a", "B0b", "B1b"]  # simple models trained and evaluated alongside ([] = none)
+threads = 0                     # CPU threads used by torch (0 = torch default)
 
 # [ml]
 # Model and training parameters: to be defined in phase 3.

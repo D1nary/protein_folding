@@ -5,6 +5,15 @@ import argparse
 from hpfold import discriminator_dataset, gui, ml, policy_dataset, simulation, verification
 from hpfold.config import load_config
 
+
+def discriminator_train(config: dict) -> None:
+    # Imported here so that torch (optional group `ml`) is needed only by
+    # this phase, and the other phases start without loading it.
+    from hpfold import discriminator_model
+
+    discriminator_model.run(config)
+
+
 # Maps each phase name accepted on the command line to the function that runs
 # it. Every function takes the loaded configuration as its only argument.
 # The functions are stored without being called (no parentheses): the chosen
@@ -17,6 +26,8 @@ PHASES = {
     "policy_dataset": policy_dataset.run,
     # Dataset of natives and decoys for the decoy discriminator.
     "discriminator_dataset": discriminator_dataset.run,
+    # Training and evaluation of the decoy discriminator (needs torch).
+    "discriminator_train": discriminator_train,
     "train": ml.run,
 }
 

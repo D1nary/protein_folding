@@ -22,7 +22,7 @@ Contiene i file di configurazione. Tutti i parametri della simulazione stanno qu
 
 File:
 
-- `default.toml`: Parametri con i valori di default: dimensioni della griglia, lunghezza e sequenza della proteina di default, aspetto della GUI, parametri REMC (repliche, temperature, passi, `rho`, `seed`), lunghezza massima verificata con l'enumerazione esatta, parametri dei due dataset (`[policy_dataset]` con la REMC più corta `[policy_dataset.remc]`, e `[discriminator_dataset]` con `[discriminator_dataset.remc]`), percorsi di input e output. Per un esperimento diverso si copia questo file e si passa la copia con `--config`.
+- `default.toml`: Parametri con i valori di default: dimensioni della griglia, lunghezza e sequenza della proteina di default, aspetto della GUI, parametri REMC (repliche, temperature, passi, `rho`, `seed`), lunghezza massima verificata con l'enumerazione esatta, parametri dei due dataset (`[policy_dataset]` con la REMC più corta `[policy_dataset.remc]`, e `[discriminator_dataset]` con `[discriminator_dataset.remc]`), parametri del decoy discriminator (`[discriminator_model]`), percorsi di input e output. Per un esperimento diverso si copia questo file e si passa la copia con `--config`.
 
 ## `cpp/`
 
@@ -80,7 +80,8 @@ File:
 - `verification.py`: Verifica della fase 1, eseguita solo su richiesta (`verify`): legge la conformazione salvata dal REMC e ne confronta l'energia con il minimo esatto calcolato per enumerazione, se la catena non supera `exact.max_length`.
 - `policy_dataset.py`: Fase 2: costruisce il dataset per la policy di folding (stati da REMC, percorsi ottimi verso lo stato nativo, stati di recupero, etichette dell'oracolo C++), lo divide in split per sequenza e lo salva; contiene anche le funzioni per rileggerlo (`load_split`), per ricavare le codifiche (coordinate, matrice di contatto, griglia) e per l'augmentation per simmetria. Vedi `notes/dataset.md`.
 - `discriminator_dataset.py`: Fase 2b: dataset per il decoy discriminator, indipendente da `policy_dataset.py` (ne importa solo alcune funzioni di utilità): conformazioni native (tutti gli stati degeneri all'energia minima raggiunta dalla REMC) e decoy (stati a energia maggiore, in fasce di difficoltà, con le trappole cinetiche), bilanciati 1:1 per sequenza, split per sequenza, salvati in CSV con un report.
-- `ml.py`: Fase 3: addestramento del modello di machine learning.
+- `discriminator_model.py`: Fase 3b: decoy discriminator in PyTorch. Il modello principale ha un ramo GNN sul grafo dei residui (archi = legami e contatti del reticolo) per la conformazione e un ramo CNN 1D sulla sola sequenza HP, con teste ausiliarie per energia, energia minima e gap; accanto allena le baseline B0a, B0b e B1b. Contiene lettura degli input (solo sequenza e mappa dei contatti), training con early stopping, metriche (AUROC, accuratezza per fascia), salvataggio e rilettura del modello (`load_model`, `score`). Vedi `notes/discriminator_model.md`.
+- `ml.py`: Fase 3: addestramento del modello di machine learning per la policy (non ancora implementato).
 
 ## `tests/`
 
@@ -95,6 +96,7 @@ File:
 - `test_simulation.py`: Fase 1: scala delle temperature, parametri non validi, riproducibilità a parità di `seed`, raggiungimento dell'energia minima, file di output, enumerazione esatta e fase `verify`.
 - `test_policy_dataset.py`: Fase 2: corrispondenza 1:1 tra slot e move set, validità delle maschere, invarianza della chiave canonica e correttezza delle simmetrie, distanze dell'oracolo, pulizia delle traiettorie, e sui file generati (oracolo esatto e grafo REMC): ogni percorso termina nello stato nativo, split senza sequenze in comune, augmentation.
 - `test_discriminator_dataset.py`: Fase 2b: energie, trappole cinetiche, fasce, coerenza di label ed energie nei file, bilanciamento 1:1, assenza di duplicati, split per sequenza, riproducibilità, fasi della riga di comando.
+- `test_discriminator_model.py`: Fase 3b: feature dei residui ed energia ricavata dagli input, assenza di campi che rivelano la risposta, invarianza a rotazioni e riflessioni, lettura della catena al contrario, AUROC contro il calcolo per coppie, file prodotti, modello salvato che ridà le predizioni salvate, riproducibilità del training. Saltato se torch non è installato.
 
 ## `data/`
 
@@ -108,7 +110,7 @@ della proteina (`initial_conformation.json`, formato descritto in
 
 ### `data/output/`
 
-Risultati delle simulazioni: la conformazione a energia minima trovata dalla fase 1 (`native_conformation.json`, stesso formato del file di input con in più la chiave `energy`) e i due dataset in `datasets/`: `policy_dataset/` (fase 2: `meta.json`, `sequences.npz`, uno `.npz` per split e `trajectories.csv`, formato in `notes/dataset.md`) e `discriminator_dataset/` (fase 2b: un `.csv` per split, `sequences.csv`, `meta.json`, `report.txt`). Il contenuto è rigenerabile e quindi non è versionato con git.
+Risultati delle simulazioni: la conformazione a energia minima trovata dalla fase 1 (`native_conformation.json`, stesso formato del file di input con in più la chiave `energy`) e i due dataset in `datasets/`: `policy_dataset/` (fase 2: `meta.json`, `sequences.npz`, uno `.npz` per split e `trajectories.csv`, formato in `notes/dataset.md`) e `discriminator_dataset/` (fase 2b: un `.csv` per split, `sequences.csv`, `provenance.csv`, `meta.json`, `report.txt`), e in `models/discriminator/` il decoy discriminator allenato (fase 3b: `discriminator.pt`, `metrics.json`, `report.txt`, `history.csv`, `test_predictions.csv`). Il contenuto è rigenerabile e quindi non è versionato con git.
 
 I file `.gitkeep` nelle due cartelle sono vuoti: servono solo a far sì che git conservi le cartelle anche quando non contengono altro.
 

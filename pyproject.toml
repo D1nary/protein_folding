@@ -18,7 +18,10 @@ dev = [
     # Headers for the editor (clangd); the build uses its own isolated copy.
     "pybind11>=3.0",
 ]
-# TODO(phase 3): add an `ml` group with the chosen framework.
+# Models of phase 3 (decoy discriminator): pip install -e ".[ml]"
+ml = [
+    "torch",
+]
 
 [tool.scikit-build]
 minimum-version = "build-system.requires"

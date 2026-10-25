@@ -45,9 +45,9 @@ Turni e coordinate descrivono la stessa forma: il modello ne userà una sola, a 
 - **`tier`**: la difficoltà del decoy, `near`, `mid` o `far` (§5.2); `native` per i nativi.
 - **`kinetic_trap`**: 1 se il decoy è una trappola cinetica, cioè un minimo locale dell'energia (§5.3).
 - **`native_overlap`**: quanti contatti H-H del nativo sono presenti anche in questa forma (§5.4).
-- **provenienza REMC**: `source`, `walker`, `replica`, `temperature`, `cycle`, `step`, `key` (§9.2).
+- **provenienza REMC**: `source`, `walker`, `replica`, `temperature`, `cycle`, `step`. Non stanno nei file degli esempi ma in un file a parte, `provenance.csv` (§9.4), perché da sole indovinano quasi sempre l'etichetta.
 
-Questi campi **non devono finire tra le feature**: `tier`, `gap` e `energy` contengono di fatto la risposta (un esempio con `gap = 0` è nativo per definizione). Servono per analizzare gli errori ("il modello sbaglia soprattutto sui decoy `near`?"), per pesare gli esempi o per costruire target alternativi.
+Questi campi **non devono finire tra le feature**: `tier`, `gap` e `energy` contengono di fatto la risposta (un esempio con `gap = 0` è nativo per definizione). Servono per analizzare gli errori ("il modello sbaglia soprattutto sui decoy `near`?"), per pesare gli esempi o per costruire target alternativi. Per non sbagliare, l'input del modello si prende sempre con `model_inputs` (§10.1), che restituisce solo `hp`, `turns` e `coordinates`.
 
 #### Un esempio
 
@@ -376,7 +376,8 @@ Siccome ogni sequenza ha tanti nativi quanti decoy, anche ogni insieme è bilanc
 | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `train.csv`, `val.csv`, `test.csv` | Gli esempi di ogni split, una riga per esempio (§9.2).                                                                                                                                                                                           |
 | `sequences.csv`                    | Una riga per sequenza (§9.3).                                                                                                                                                                                                                    |
-| `meta.json`                        | Descrizione del dataset: versione del formato, lunghezza N, nomi degli split, delle fasce e delle sorgenti, significato delle lettere dei turni, convenzione delle coordinate, il riepilogo (`summary`), la configurazione usata, il commit git. |
+| `provenance.csv`                   | Dove la REMC ha trovato ogni esempio, una riga per esempio (§9.4). Solo per l'analisi, mai come input del modello.                                                                                                                              |
+| `meta.json`                        | Descrizione del dataset: versione del formato (2), lunghezza N, nomi degli split, delle fasce e delle sorgenti, input ammessi per il modello (`model_inputs`), significato delle lettere dei turni, convenzione delle coordinate, il riepilogo (`summary`), la configurazione usata, il commit git. |
 | `report.txt`                       | Il riepilogo stampato a fine esecuzione: esempi per classe e split, sequenze per split, sequenze scartate, fasce, trappole, istogramma dei gap, energie dei decoy.                                                                               |
 
 Il formato è CSV, leggibile anche con un foglio di calcolo o con pandas. Il dataset è piccolo (circa 62 600 esempi, 12,9 MB): non serve la compressione del policy dataset.
@@ -398,14 +399,8 @@ Il formato è CSV, leggibile anche con un foglio di calcolo o con pandas. Il dat
 | `turns`          | turni della forma canonica, una lettera per residuo interno: `F`, `L`, `R`                          |
 | `coordinates`    | coordinate della forma canonica come lista JSON `[[x0,y0],[x1,y1],…]`                               |
 | `key`            | chiave canonica                                                                                     |
-| `source`         | dove è stato trovato lo stato: `snapshot`, `trajectory` o `remc_best` (§3.1)                        |
-| `walker`         | walker dello snapshot o della traiettoria (−1 per `remc_best`)                                      |
-| `replica`        | replica dello snapshot (−1 altrimenti)                                                              |
-| `temperature`    | temperatura della replica dello snapshot (vuoto altrimenti)                                         |
-| `cycle`          | ciclo REMC dello snapshot (−1 altrimenti)                                                           |
-| `step`           | posizione nella traiettoria del walker (−1 altrimenti)                                              |
 
-Nel dataset di default i nativi vengono quasi tutti dagli snapshot (26 005 su 31 320), soprattutto dalle repliche fredde, mentre i decoy vengono quasi tutti dalle traiettorie (29 199 su 31 320). È una conseguenza dell'ordine di §3.1: uno stato a energia minima viene visto spesso, quindi è facile che compaia anche in uno snapshot; un decoy qualsiasi è uno tra decine di migliaia di stati di passaggio, che quasi sempre compaiono solo nelle traiettorie. Anche per questo i campi di provenienza non vanno usati come feature.
+La provenienza dell'esempio non è qui ma in `provenance.csv` (§9.4).
 
 ### 9.3 Campi di `sequences.csv`
 
@@ -420,6 +415,24 @@ Nel dataset di default i nativi vengono quasi tutti dagli snapshot (26 005 su 31
 | `decoys`                      | decoy presi come esempi (uguale a `positives`)                                 |
 | `visited_states`              | stati distinti visitati dalla REMC                                             |
 
+### 9.4 Campi di `provenance.csv`
+
+Una riga per esempio, nello stesso ordine dei file `train.csv`, `val.csv` e `test.csv` messi in fila. Si collega all'esempio con la coppia (`seq_id`, `key`), che dentro una sequenza è unica (§6.2).
+
+| Campo                    | Contenuto                                                                    |
+| ------------------------ | ---------------------------------------------------------------------------- |
+| `seq_id`, `key`, `split` | sequenza, chiave canonica e split dell'esempio                               |
+| `source`                 | dove è stato trovato lo stato: `snapshot`, `trajectory` o `remc_best` (§3.1) |
+| `walker`                 | walker dello snapshot o della traiettoria (−1 per `remc_best`)               |
+| `replica`                | replica dello snapshot (−1 altrimenti)                                       |
+| `temperature`            | temperatura della replica dello snapshot (vuoto altrimenti)                  |
+| `cycle`                  | ciclo REMC dello snapshot (−1 altrimenti)                                    |
+| `step`                   | posizione nella traiettoria del walker (−1 altrimenti)                       |
+
+**Perché è un file a parte.** Nel dataset di default i nativi vengono quasi tutti dagli snapshot (26 005 su 31 320), soprattutto dalle repliche fredde, mentre i decoy vengono quasi tutti dalle traiettorie (29 199 su 31 320). La regola "se viene da uno snapshot è nativo" indovina da sola l'88% degli esempi, senza guardare né la sequenza né la forma; `temperature` dà lo stesso risultato, perché è piena solo per gli snapshot.
+
+Non è un errore: è una conseguenza dell'ordine di §3.1 e della fisica della simulazione. Uno stato a energia minima viene visitato spesso, quindi è facile che compaia anche in uno snapshot; un decoy qualsiasi è uno tra decine di migliaia di stati di passaggio, che quasi sempre compaiono solo nelle traiettorie. Un modello che vedesse questi campi imparerebbe "snapshot ⇒ nativo" invece di guardare la conformazione, e sarebbe inutile sulle forme proposte da altri metodi (per esempio dalla policy), che una provenienza REMC non ce l'hanno. Tenerli fuori dai file degli esempi toglie la tentazione; restano disponibili per l'analisi (§10.4).
+
 ---
 
 ## 10. Come si usa
@@ -432,13 +445,14 @@ from hpfold import discriminator_dataset
 data = discriminator_dataset.load_split("data/output/datasets/discriminator_dataset", "train")
 meta = discriminator_dataset.load_meta("data/output/datasets/discriminator_dataset")
 
-X_seq = data["hp"]            # (S, N): 1 per H, 0 per P
-X_turns = data["turns"]       # (S, N−2): 0 = FORWARD, 1 = LEFT, 2 = RIGHT
-X_coords = data["coordinates"]  # (S, N, 2)
+X = discriminator_dataset.model_inputs(data)   # solo gli input ammessi
+X_seq = X["hp"]               # (S, N): 1 per H, 0 per P
+X_turns = X["turns"]          # (S, N−2): 0 = FORWARD, 1 = LEFT, 2 = RIGHT
+X_coords = X["coordinates"]   # (S, N, 2)
 y = data["label"]             # (S,): 1 nativo, 0 decoy
 ```
 
-`load_split` restituisce un dizionario di array numpy: le colonne del CSV (numeri e stringhe) più tre codifiche già pronte, `hp`, `turns` come codici numerici e `coordinates` come array. Da qui si ottengono le altre codifiche con le funzioni del policy dataset, per esempio:
+`load_split` restituisce un dizionario di array numpy: le colonne del CSV (numeri e stringhe) più tre codifiche già pronte, `hp`, `turns` come codici numerici e `coordinates` come array. Nel dizionario ci sono anche target e campi di analisi (`label`, `energy`, `e_min`, `gap`, `tier`, ...), quindi l'input del modello non si prende da lì direttamente ma da `model_inputs`. È una **lista bianca** (`MODEL_INPUTS = ("hp", "turns", "coordinates")`): elenca le colonne ammesse invece di togliere quelle vietate, così una colonna aggiunta in futuro non entra nell'input per sbaglio. Da questi array si ottengono le altre codifiche con le funzioni del policy dataset, per esempio:
 
 ```python
 from hpfold import policy_dataset
@@ -461,6 +475,15 @@ Come nel policy dataset, ogni stato è salvato **una sola volta in forma canonic
 - **rotazione:** serve solo alle codifiche a coordinate o a griglia; `policy_dataset.rotate_coordinates` ruota di 90°.
 
 A differenza del policy dataset non ci sono slot di mosse da permutare: label, energia, gap e overlap non cambiano con una rotazione o una riflessione, quindi l'augmentation tocca solo l'input.
+
+### 10.4 Provenienza e controllo delle scorciatoie
+
+```python
+origin = discriminator_dataset.load_provenance("data/output/datasets/discriminator_dataset", "test")
+origin["source"]   # (S,): allineato riga per riga con load_split(..., "test")
+```
+
+Anche senza vedere `source`, il modello potrebbe imparare la provenienza in modo indiretto: gli stati degli snapshot vengono soprattutto dalle repliche fredde e potrebbero avere forme tipiche (per esempio più compatte), e allora il modello imparerebbe "compatto ⇒ nativo" invece di "ha tutti i contatti H-H possibili per questa sequenza". Per accorgersene, dopo il training si confronta il punteggio dato ai decoy da snapshot con quello dato ai decoy da traiettoria **a parità di gap e di fascia**: se i primi sembrano sistematicamente più nativi, il modello sta usando una scorciatoia.
 
 ---
 
@@ -542,7 +565,8 @@ Le funzioni principali di `discriminator_dataset.py`:
 - `is_kinetic_trap`, `tier_of`, `tier_quotas`, `native_overlap`: le misure di §5;
 - `sequence_examples`: nativi e decoy di una sequenza, oppure il motivo per cui è scartata;
 - `build_dataset`, `run`: generazione dei file e report;
-- `load_split`, `load_meta`: lettura.
+- `load_split`, `load_meta`, `load_provenance`: lettura;
+- `model_inputs`: gli input ammessi per il modello (`MODEL_INPUTS`).
 
 ---
 
@@ -558,8 +582,10 @@ Le funzioni principali di `discriminator_dataset.py`:
   - per ogni esempio, ricostruendo la conformazione dalle coordinate si ritrovano energia e chiave; il gap è giusto; i nativi hanno energia minima e i decoy energia maggiore;
   - ogni sequenza ha tanti nativi quanti decoy, al più `examples_per_class`, e nessuna chiave ripetuta; l'energia minima coincide con quella esatta;
   - gli split non hanno sequenze in comune e non contengono una sequenza insieme alla sua inversa;
-  - `load_split` restituisce array delle forme giuste;
-  - rigenerando il dataset con la stessa configurazione si ottengono file identici;
+  - `load_split` restituisce array delle forme giuste e nessun campo di provenienza;
+  - i campi di provenienza stanno solo in `provenance.csv`, che ha una riga per esempio nello stesso ordine dei file degli split;
+  - `model_inputs` restituisce esattamente `hp`, `turns` e `coordinates`;
+  - rigenerando il dataset con la stessa configurazione si ottengono file identici (anche `provenance.csv`);
 - **riga di comando:** la fase `discriminator_dataset` esiste ed è separata da `policy_dataset`, e le due cartelle di output sono diverse.
 
 ---
@@ -571,4 +597,4 @@ Le funzioni principali di `discriminator_dataset.py`:
 - **Oltre 20 residui i nativi non sono garantiti.** Senza l'enumerazione esatta, `e_min` è solo il minimo trovato dalla REMC.
 - **Sequenze molto degeneri tagliate.** Per le sequenze con migliaia di nativi se ne vedono solo 20, scelti a caso.
 - **Una lunghezza per dataset.** Tutte le sequenze hanno `length` residui. Per il discriminatore non è un vincolo strutturale come per il policy dataset (non ci sono slot), ma la pipeline genera comunque una sola lunghezza.
-- **I campi di provenienza sono sbilanciati tra le classi** (§9.2): vanno usati solo per l'analisi, mai come feature.
+- **I campi di provenienza sono sbilanciati tra le classi** (§9.4): per questo stanno in `provenance.csv` e non nei file degli esempi. Il controllo sulle scorciatoie indirette (§10.4) si potrà fare solo con un modello allenato.

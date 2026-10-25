@@ -5,8 +5,9 @@ Campionamento dello spazio delle conformazioni di una proteina nel modello HP
 etichettato di conformazioni native e decoy su cui addestrare un modello di
 machine learning.
 
-Stato attuale: **fasi 0, 1 e 2 implementate**. La fase 3 non è ancora
-implementata (il file contiene uno scheletro e un `TODO`).
+Stato attuale: **fasi 0, 1, 2 e 2b implementate**. Della fase 3 è
+implementato il decoy discriminator (3b); il modello per la policy di folding
+non ancora (`ml.py` contiene uno scheletro e un `TODO`).
 
 ## Fasi
 
@@ -16,7 +17,8 @@ implementata (il file contiene uno scheletro e un `TODO`).
 | 1 | Ricerca dello stato nativo con REMC | `cpp/`, `python/hpfold/simulation.py` |
 | 2 | Dataset per la policy di folding (stati, mosse valide, mosse ottime) | `cpp/` (azioni, oracolo, registrazione REMC), `python/hpfold/policy_dataset.py` |
 | 2b | Dataset per il decoy discriminator (conformazioni native / decoy) | `python/hpfold/discriminator_dataset.py` |
-| 3 | Addestramento del modello di ML | `python/hpfold/ml.py` |
+| 3 | Addestramento del modello di ML per la policy | `python/hpfold/ml.py` |
+| 3b | Decoy discriminator: GNN + CNN 1D che dice se una conformazione è nativa | `python/hpfold/discriminator_model.py` |
 
 ## Struttura
 
@@ -46,6 +48,7 @@ protein_folding/
 │   ├── simulation.py         # fase 1 (chiama hpfold._core)
 │   ├── policy_dataset.py     # fase 2
 │   ├── discriminator_dataset.py # fase 2b
+│   ├── discriminator_model.py   # fase 3b (torch)
 │   └── ml.py                 # fase 3
 ├── tests/
 │   ├── test_smoke.py         # l'estensione si importa, la config si legge
@@ -54,7 +57,8 @@ protein_folding/
 │   ├── test_core.py          # nucleo C++: energia, mosse VSHD e pull
 │   ├── test_simulation.py    # fase 1: REMC, riproducibilità, output
 │   ├── test_policy_dataset.py # fase 2: azioni, simmetrie, oracolo, file
-│   └── test_discriminator_dataset.py # fase 2b: etichette, bilanciamento, split
+│   ├── test_discriminator_dataset.py # fase 2b: etichette, bilanciamento, split
+│   └── test_discriminator_model.py   # fase 3b: input, simmetrie, metriche, training
 ├── data/
 │   ├── input/                # configurazione iniziale disegnata con la GUI
 │   └── output/               # conformazione nativa, campioni (non versionato)
@@ -89,12 +93,14 @@ Ambiente virtuale, compilazione e installazione:
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e ".[dev]"
+pip install -e ".[dev,ml]"
 ```
 
 `pip install -e .` compila il C++ e installa il pacchetto in modalità
 modificabile: le modifiche ai file Python sono subito attive, mentre dopo una
-modifica al C++ va rieseguito il comando.
+modifica al C++ va rieseguito il comando. Il gruppo `ml` installa PyTorch,
+che serve solo alla fase 3b (`discriminator_train`); senza, le altre fasi
+funzionano e i test del modello vengono saltati.
 
 Verifica:
 
@@ -120,6 +126,7 @@ python -m hpfold --config config/default.toml simulate  # fase 1
 python -m hpfold --config config/default.toml verify    # verifica della fase 1 (facoltativa)
 python -m hpfold --config config/default.toml policy_dataset         # fase 2
 python -m hpfold --config config/default.toml discriminator_dataset  # fase 2b
+python -m hpfold --config config/default.toml discriminator_train    # fase 3b
 python -m hpfold --config config/default.toml train     # fase 3
 ```
 
@@ -244,10 +251,32 @@ Le conformazioni sono deduplicate con la chiave canonica (traslazioni,
 rotazioni e riflessioni contano una volta) e lo split è per sequenza. File:
 `train.csv`, `val.csv`, `test.csv` (una riga per esempio: sequenza, mosse
 relative `turns` F/L/R, coordinate, energia, gap, label, fascia, trappola,
-sovrapposizione dei contatti col nativo, provenienza REMC: walker, replica,
-temperatura, ciclo, passo), `sequences.csv`, `meta.json` e `report.txt` (lo
-stesso riepilogo stampato a fine esecuzione). `discriminator_dataset.load_split`
-li rilegge come array numpy.
+sovrapposizione dei contatti col nativo), `sequences.csv`, `provenance.csv`
+(provenienza REMC di ogni esempio: sorgente, walker, replica, temperatura,
+ciclo, passo; tenuta a parte perché predice l'etichetta e non va mai data al
+modello), `meta.json` e `report.txt` (lo stesso riepilogo stampato a fine
+esecuzione). `discriminator_dataset.load_split` li rilegge come array numpy, e
+`discriminator_dataset.model_inputs` ne estrae i soli input ammessi per il
+modello (`hp`, `turns`, `coordinates`).
+
+### Fase 3b: decoy discriminator (`discriminator_train`)
+
+```bash
+python -m hpfold --config config/default.toml discriminator_train
+```
+
+Allena sul dataset della fase 2b (sezione `[discriminator_model]`) un
+classificatore nativo/decoy con due rami: una GNN sul grafo dei residui
+(archi = legami e contatti del reticolo) per la conformazione e una CNN 1D
+sulla sola sequenza HP. Teste ausiliarie predicono energia, energia minima e
+gap. Accanto al modello principale allena tre baseline (B0a: solo energia;
+B0b: energia + feature della sequenza; B1b: MLP sulla mappa dei contatti H-H),
+con gli stessi split e le stesse metriche. Scrive in
+`output.discriminator_model_dir` (`data/output/models/discriminator/`) il
+modello (`discriminator.pt`, riletto da `discriminator_model.load_model`),
+`metrics.json`, `report.txt` (accuratezza, AUROC e accuratezza per fascia),
+`history.csv` e `test_predictions.csv`. Dettagli e risultati in
+`notes/discriminator_model.md`.
 
 ### Verifica della fase 1: enumerazione esatta
 

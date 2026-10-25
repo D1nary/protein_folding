@@ -84,10 +84,29 @@ def all_examples(directory):
 
 def test_files(built):
     directory, _ = built
-    for name in [f"{s}.csv" for s in dd.SPLITS] + ["sequences.csv", "meta.json", "report.txt"]:
+    for name in [f"{s}.csv" for s in dd.SPLITS] + ["sequences.csv", "provenance.csv",
+                                                    "meta.json", "report.txt"]:
         assert (directory / name).exists()
     assert tuple(read_rows(directory / "train.csv")[0]) == dd.EXAMPLE_FIELDS
+    assert tuple(read_rows(directory / "provenance.csv")[0]) == dd.PROVENANCE_FIELDS
     assert json.loads((directory / "meta.json").read_text())["length"] == 10
+
+
+def test_provenance_is_separate(built):
+    directory, _ = built
+    # The provenance fields predict the label: none of them is in the split files.
+    shared = set(dd.EXAMPLE_FIELDS) & set(dd.PROVENANCE_FIELDS)
+    assert shared == {"seq_id", "key", "split"}
+    provenance = read_rows(directory / "provenance.csv")
+    examples = all_examples(directory)
+    assert [(p["seq_id"], p["key"], p["split"]) for p in provenance] == \
+        [(e["seq_id"], e["key"], e["split"]) for e in examples]
+    assert {p["source"] for p in provenance} <= set(dd.SOURCES)
+    for split in dd.SPLITS:
+        data = dd.load_split(directory, split)
+        origin = dd.load_provenance(directory, split)
+        assert (origin["key"] == data["key"]).all()
+        assert (origin["seq_id"] == data["seq_id"]).all()
 
 
 def test_labels_and_energies(built):
@@ -143,6 +162,13 @@ def test_load_split(built):
     assert data["turns"].shape == (len(rows), 8)
     assert data["hp"].shape == (len(rows), 10)
     assert set(np.unique(data["label"])) <= {0, 1}
+    assert not (set(dd.PROVENANCE_FIELDS) - {"seq_id", "key", "split"}) & set(data)
+
+
+def test_model_inputs_are_the_whitelist(built):
+    directory, _ = built
+    inputs = dd.model_inputs(dd.load_split(directory, "train"))
+    assert tuple(inputs) == dd.MODEL_INPUTS == ("hp", "turns", "coordinates")
 
 
 def test_reproducible(built, tmp_path):
@@ -150,8 +176,8 @@ def test_reproducible(built, tmp_path):
     config = copy.deepcopy(config)
     config["output"]["discriminator_dataset_dir"] = str(tmp_path)
     dd.build_dataset(config, verbose=False)
-    for split in dd.SPLITS:
-        assert (tmp_path / f"{split}.csv").read_text() == (directory / f"{split}.csv").read_text()
+    for name in [f"{s}.csv" for s in dd.SPLITS] + ["provenance.csv"]:
+        assert (tmp_path / name).read_text() == (directory / name).read_text()
 
 
 def test_cli_phases():

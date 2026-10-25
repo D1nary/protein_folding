@@ -21,6 +21,12 @@ conformations related by a translation, rotation or reflection of the lattice
 count once. Each sequence gets as many decoys as natives (balance 1:1 per
 sequence), and the train / val / test split is by sequence.
 
+Where the REMC found each state (snapshot or trajectory, temperature, ...) is
+written to a separate file, ``provenance.csv``: it is strongly correlated
+with the label (natives are seen often, so they end up in the snapshots), and
+a model must never see it. The inputs a model may receive are listed in
+``MODEL_INPUTS``.
+
 This pipeline is independent of the policy dataset (policy_dataset.py, phase
 ``policy_dataset``): it only imports some of its helper functions and writes
 to its own folder, ``output.discriminator_dataset_dir``.
@@ -43,7 +49,7 @@ from hpfold.policy_dataset import (
     turns_to_coordinates,
 )
 
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
 SPLITS = ("train", "val", "test")
 # Difficulty of a decoy (field `tier`); natives have tier "native".
 TIERS = ("near", "mid", "far")
@@ -68,6 +74,14 @@ EXAMPLE_FIELDS = (
     "turns",
     "coordinates",
     "key",
+)
+
+# Fields of provenance.csv: one row per example, in the same order as the
+# split files, joined to them by (seq_id, key). Only for analysis.
+PROVENANCE_FIELDS = (
+    "seq_id",
+    "key",
+    "split",
     "source",
     "walker",
     "replica",
@@ -75,6 +89,11 @@ EXAMPLE_FIELDS = (
     "cycle",
     "step",
 )
+
+# The only arrays of load_split a model may receive as input. Everything else
+# is a target (label, energy, gap) or is only for the analysis of the errors
+# (tier, kinetic_trap, native_overlap, e_min, which give the answer away).
+MODEL_INPUTS = ("hp", "turns", "coordinates")
 
 SEQUENCE_FIELDS = (
     "seq_id",
@@ -331,7 +350,9 @@ def sequence_examples(sequence: str, seq_id: int, config: dict):
 
 def _write_csv(path: Path, fields, rows) -> None:
     with open(path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fields)
+        # An example carries both the split and the provenance fields: each
+        # file takes its own.
+        writer = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(rows)
 
@@ -416,8 +437,11 @@ def build_dataset(config: dict, verbose: bool = True) -> Path:
 
     out = Path(config["output"]["discriminator_dataset_dir"])
     out.mkdir(parents=True, exist_ok=True)
+    by_split = {name: [e for e in examples if e["split"] == name] for name in SPLITS}
     for name in SPLITS:
-        _write_csv(out / f"{name}.csv", EXAMPLE_FIELDS, [e for e in examples if e["split"] == name])
+        _write_csv(out / f"{name}.csv", EXAMPLE_FIELDS, by_split[name])
+    _write_csv(out / "provenance.csv", PROVENANCE_FIELDS,
+               [e for name in SPLITS for e in by_split[name]])
     _write_csv(out / "sequences.csv", SEQUENCE_FIELDS, infos)
 
     report = summary(examples, infos, dropped)
@@ -428,6 +452,7 @@ def build_dataset(config: dict, verbose: bool = True) -> Path:
         "splits": list(SPLITS),
         "tiers": list(TIERS),
         "sources": list(SOURCES),
+        "model_inputs": list(MODEL_INPUTS),
         "turn_letters": {"F": "FORWARD", "L": "LEFT", "R": "RIGHT"},
         "coordinates": "canonical form: residue 0 at the origin, first bond along +x",
         "summary": report,
@@ -463,21 +488,18 @@ def load_split(directory, split: str) -> dict:
 
     Besides the columns of the CSV (strings and numbers), it adds `hp` (S, N)
     with 1 for H, `turns` as codes (S, N-2) 0 forward / 1 left / 2 right and
-    `coordinates` as an array (S, N, 2).
+    `coordinates` as an array (S, N, 2). The input of a model must come from
+    `model_inputs`, not from this dictionary directly.
     """
     with open(Path(directory) / f"{split}.csv", newline="") as f:
         rows = list(csv.DictReader(f))
     n = load_meta(directory)["length"]
     data = {}
-    for name in ("seq_id", "label", "energy", "e_min", "gap", "kinetic_trap", "walker",
-                 "replica", "cycle", "step"):
+    for name in ("seq_id", "label", "energy", "e_min", "gap", "kinetic_trap"):
         data[name] = np.array([int(r[name]) for r in rows], dtype=np.int32)
     data["native_overlap"] = np.array([float(r["native_overlap"]) for r in rows])
-    data["temperature"] = np.array(
-        [float(r["temperature"]) if r["temperature"] else np.nan for r in rows]
-    )
     data["key"] = np.array([int(r["key"]) for r in rows], dtype=np.uint64)
-    for name in ("sequence", "tier", "source"):
+    for name in ("sequence", "tier"):
         data[name] = np.array([r[name] for r in rows])
     data["hp"] = np.array([[c == "H" for c in r["sequence"]] for r in rows],
                           dtype=np.uint8).reshape(len(rows), n)
@@ -485,4 +507,29 @@ def load_split(directory, split: str) -> dict:
                              dtype=np.uint8).reshape(len(rows), n - 2)
     data["coordinates"] = np.array([json.loads(r["coordinates"]) for r in rows],
                                    dtype=np.int32).reshape(len(rows), n, 2)
+    return data
+
+
+def model_inputs(data: dict) -> dict:
+    """The arrays of `load_split` a model may receive: `MODEL_INPUTS` only."""
+    return {name: data[name] for name in MODEL_INPUTS}
+
+
+def load_provenance(directory, split: str | None = None) -> dict:
+    """Where the REMC found each example (provenance.csv), for analysis only.
+
+    Rows are in the same order as the split files; with `split` only the rows
+    of that split, aligned with `load_split(directory, split)`.
+    """
+    with open(Path(directory) / "provenance.csv", newline="") as f:
+        rows = [r for r in csv.DictReader(f) if split is None or r["split"] == split]
+    data = {}
+    for name in ("seq_id", "walker", "replica", "cycle", "step"):
+        data[name] = np.array([int(r[name]) for r in rows], dtype=np.int32)
+    data["temperature"] = np.array(
+        [float(r["temperature"]) if r["temperature"] else np.nan for r in rows]
+    )
+    data["key"] = np.array([int(r["key"]) for r in rows], dtype=np.uint64)
+    for name in ("split", "source"):
+        data[name] = np.array([r[name] for r in rows])
     return data
