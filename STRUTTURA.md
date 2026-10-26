@@ -75,12 +75,14 @@ File:
 - `__main__.py`: Riga di comando: `python -m hpfold --config <file> <fase>` legge la configurazione e avvia la fase richiesta.
 - `config.py`: Lettura del file di configurazione TOML.
 - `conformation.py`: Logica della fase 0, senza codice grafico: stato della catena in costruzione, validazione delle mosse, conformazione di default e lettura/scrittura del file JSON (usata anche dalla fase 1 per leggere l'input e scrivere il risultato).
-- `gui.py`: Fase 0: finestra Tkinter per disegnare a mano la configurazione iniziale, su una griglia quadrata di lato `protein.length + 4` (lo stesso reticolo su cui il dataset costruisce gli stati). Contiene solo l'interfaccia e usa `conformation.py` per tutto il resto.
+- `gui.py`: Fase 0: finestra Tkinter per disegnare a mano la configurazione iniziale, su una griglia quadrata di lato `protein.length + 4` (lo stesso reticolo su cui il dataset costruisce gli stati). Contiene solo l'interfaccia e usa `conformation.py` per tutto il resto. Contiene anche la finestra dell'animazione del percorso verso lo stato nativo (`FoldingAnimation`, fase `discriminator_score`).
 - `simulation.py`: Fase 1: legge la conformazione iniziale, costruisce i parametri dal file di configurazione, avvia la simulazione REMC chiamando il codice C++ (`hpfold._core`) e salva la conformazione a energia minima.
 - `verification.py`: Verifica della fase 1, eseguita solo su richiesta (`verify`): legge la conformazione salvata dal REMC e ne confronta l'energia con il minimo esatto calcolato per enumerazione, se la catena non supera `exact.max_length`.
 - `policy_dataset.py`: Fase 2: costruisce il dataset per la policy di folding (stati da REMC, percorsi ottimi verso lo stato nativo, stati di recupero, etichette dell'oracolo C++), lo divide in split per sequenza e lo salva; contiene anche le funzioni per rileggerlo (`load_split`), per ricavare le codifiche (coordinate, matrice di contatto, griglia) e per l'augmentation per simmetria. Vedi `notes/dataset.md`.
 - `discriminator_dataset.py`: Fase 2b: dataset per il decoy discriminator, indipendente da `policy_dataset.py` (ne importa solo alcune funzioni di utilità): conformazioni native (tutti gli stati degeneri all'energia minima raggiunta dalla REMC) e decoy (stati a energia maggiore, in fasce di difficoltà, con le trappole cinetiche), bilanciati 1:1 per sequenza, split per sequenza, salvati in CSV con un report.
 - `discriminator_model.py`: Fase 3b: decoy discriminator in PyTorch. Il modello principale ha un ramo GNN sul grafo dei residui (archi = legami e contatti del reticolo) per la conformazione e un ramo CNN 1D sulla sola sequenza HP, con teste ausiliarie per energia, energia minima e gap; accanto allena le baseline B0a, B0b e B1b. Contiene lettura degli input (solo sequenza e mappa dei contatti), training con early stopping, metriche (AUROC, accuratezza per fascia), salvataggio e rilettura del modello (`load_model`, `score`). Vedi `notes/discriminator_model.md`.
+- `discriminator_score.py`: Fase 3b, uso: giudica con il modello allenato una conformazione disegnata o letta da file, poi apre l'animazione del percorso verso lo stato nativo.
+- `folding_path.py`: Percorso più breve da una conformazione allo stato nativo più vicino, calcolato con l'oracolo esatto del policy dataset (non dal modello) e applicato nel frame della conformazione data, per l'animazione di `discriminator_score`.
 - `ml.py`: Fase 3: addestramento del modello di machine learning per la policy (non ancora implementato).
 
 ## `tests/`
@@ -91,7 +93,8 @@ File:
 
 - `test_smoke.py`: Controlli minimi: l'estensione C++ si importa e la configurazione di default si legge.
 - `test_conformation.py`: Logica della fase 0: mosse valide e non valide, annullamento, tipi H/P, conformazione di default, file JSON.
-- `test_gui.py`: Parti di `gui.py` che non richiedono una finestra: conversione pixel/nodo e salvataggio della proteina di default.
+- `test_gui.py`: Parti di `gui.py` che non richiedono una finestra: conversione pixel/nodo, salvataggio della proteina di default, contatti H-H e posizioni intermedie dell'animazione.
+- `test_folding_path.py`: Percorso verso lo stato nativo: ogni mossa scende di un passo di distanza, il percorso finisce in uno stato nativo, resta nel frame della conformazione data ed è sempre lo stesso.
 - `test_core.py`: Nucleo C++: calcolo dell'energia, mosse VSHD e pull move su casi costruiti a mano, e validità di ogni mossa (catena connessa, autoevitante, dentro il reticolo) lungo una camminata casuale.
 - `test_simulation.py`: Fase 1: scala delle temperature, parametri non validi, riproducibilità a parità di `seed`, raggiungimento dell'energia minima, file di output, enumerazione esatta e fase `verify`.
 - `test_policy_dataset.py`: Fase 2: corrispondenza 1:1 tra slot e move set, validità delle maschere, invarianza della chiave canonica e correttezza delle simmetrie, distanze dell'oracolo, pulizia delle traiettorie, e sui file generati (oracolo esatto e grafo REMC): ogni percorso termina nello stato nativo, split senza sequenze in comune, augmentation.

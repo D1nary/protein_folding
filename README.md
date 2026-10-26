@@ -50,6 +50,7 @@ protein_folding/
 │   ├── discriminator_dataset.py # fase 2b
 │   ├── discriminator_model.py   # fase 3b (torch)
 │   ├── discriminator_score.py   # fase 3b: giudizio di una conformazione da riga di comando
+│   ├── folding_path.py          # fase 3b: percorso verso lo stato nativo (oracolo esatto)
 │   └── ml.py                 # fase 3
 ├── tests/
 │   ├── test_smoke.py         # l'estensione si importa, la config si legge
@@ -60,7 +61,8 @@ protein_folding/
 │   ├── test_policy_dataset.py # fase 2: azioni, simmetrie, oracolo, file
 │   ├── test_discriminator_dataset.py # fase 2b: etichette, bilanciamento, split
 │   ├── test_discriminator_model.py   # fase 3b: input, simmetrie, metriche, training
-│   └── test_discriminator_score.py   # fase 3b: file di input, controlli, uscite
+│   ├── test_discriminator_score.py   # fase 3b: file di input, controlli, uscite
+│   └── test_folding_path.py          # fase 3b: percorso verso lo stato nativo
 ├── data/
 │   ├── input/                # configurazione iniziale disegnata con la GUI
 │   └── output/               # conformazione nativa, campioni (non versionato)

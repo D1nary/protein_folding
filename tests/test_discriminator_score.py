@@ -8,6 +8,7 @@ pytest.importorskip("tkinter")
 from hpfold import __main__ as cli  # noqa: E402
 from hpfold import discriminator_model as dm  # noqa: E402
 from hpfold import discriminator_score as ds  # noqa: E402
+from hpfold import folding_path as fp  # noqa: E402
 from hpfold.config import load_config  # noqa: E402
 
 # A U of 4 residues: the two ends are in contact.
@@ -32,6 +33,16 @@ def test_default_input_file_fits_the_default_dataset():
     sequence, coordinates = ds.load_input(config["discriminator_model"]["input_conformation"],
                                           length)
     assert len(sequence) == len(coordinates) == length
+
+
+def test_default_input_file_is_not_native():
+    # Otherwise the animation that follows the judgement would have no moves.
+    config = load_config("config/default.toml")
+    sequence, coordinates = ds.load_input(config["discriminator_model"]["input_conformation"],
+                                          config["discriminator_dataset"]["length"])
+    path = fp.fold_to_native(sequence, coordinates,
+                             config["policy_dataset"]["exact_max_length"])
+    assert len(path.steps) > 0
 
 
 def test_coordinates_can_be_anywhere():

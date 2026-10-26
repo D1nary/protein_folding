@@ -8,8 +8,8 @@
 # from (the project root).
 
 [lattice]
-width = 30
-height = 30
+width = 20
+height = 20
 
 [protein]
 length = 16                     # N: must match the length of `sequence`
@@ -26,9 +26,12 @@ initial_conformation = "data/input/initial_conformation.json"
 # residues, keeping the same proportion between the two.
 cell_size = 60              # distance in pixels between two adjacent nodes of the grid
 residue_radius = 16         # radius in pixels of the circle drawn for a residue
-color_untyped = "#9e9e9e"   # residue whose type has not been assigned yet
-color_h = "#d62728"         # hydrophobic residue
-color_p = "#1f77b4"         # polar residue
+color_untyped = "#667085"   # residue whose type has not been assigned yet
+color_h = "#E53935"         # hydrophobic residue
+color_p = "#1E88E5"         # polar residue
+# Animation of the path to the native state (phase `discriminator_score`).
+animation_move_ms = 600     # time for the residues to slide through one move
+animation_pause_ms = 700    # stop on every conformation of the path
 
 [remc]
 # Replica Exchange Monte Carlo (phase 1), variant REMC_m of Thachuk et al.

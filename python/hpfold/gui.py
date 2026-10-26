@@ -4,12 +4,15 @@ The drawn configuration is saved to the file given by
 ``protein.initial_conformation``.
 
 This module contains only the window: the state of the chain, the validation
-of the moves and the JSON file are handled by ``hpfold.conformation``.
+of the moves and the JSON file are handled by ``hpfold.conformation``. It also
+holds the window that animates the path to the native state (phase
+``discriminator_score``, FoldingAnimation).
 """
 
 import tkinter as tk
 from collections.abc import Callable
 from pathlib import Path
+from tkinter import font as tkfont
 from tkinter import messagebox
 
 from hpfold import _core
@@ -30,6 +33,198 @@ MOVE_ERROR_MESSAGES = {
     MoveError.OCCUPIED: "Cell already occupied by another residue.",
     MoveError.NOT_ADJACENT: "The cell must be adjacent (up/down/left/right) to the last residue.",
 }
+
+# Colours of the windows. The colours of the residues are in [gui] of the
+# configuration file.
+THEME = {
+    "window": "#F0F2F5",       # background of the windows and of the panels
+    "grid": "#F8F9FA",         # background of the grid
+    "surface": "#FFFFFF",      # boxes and status bar
+    "border": "#E4E7EC",       # thin border around the grid and the boxes
+    "text": "#1D2939",
+    "text_muted": "#667085",
+    "value": "#101828",        # numbers in the boxes
+    "value_label": "#475467",  # labels of the numbers
+    "button": "#E2E8F0",
+    "button_active": "#CBD5E1",
+    "button_text": "#334155",
+    "button_primary": "#2563EB",  # main action of the window
+    "button_primary_active": "#1D4ED8",
+    "button_primary_text": "#FFFFFF",
+    "button_disabled": "#F1F5F9",
+    "text_disabled": "#94A3B8",
+    "lattice": "#D0D5DD",      # lines and nodes of the grid
+    "bond": "#475467",         # bonds of the chain and H-H contacts
+    # Same colour as the grid: a thin gap between a residue and its bonds.
+    "residue_outline": "#F8F9FA",
+    "residue_label": "#FFFFFF",
+}
+# Size in points of the text of every widget (the default of Tk is 10).
+FONT_SIZE = 12
+TITLE_FONT = ("TkDefaultFont", FONT_SIZE + 2, "bold")
+VALUE_FONT = ("TkDefaultFont", FONT_SIZE, "bold")
+CARD_TITLE_FONT = ("TkDefaultFont", FONT_SIZE + 1, "bold")
+# Width in pixels of the explanations in the side panels, and of the
+# labels of KeyValueList: longer ones go on more lines.
+PANEL_TEXT_WIDTH = 270
+LABEL_WIDTH = 170
+
+
+def apply_theme(root: tk.Tk) -> None:
+    """Flat light theme for every widget created afterwards under `root`.
+
+    Uses the option database of Tk, so the widgets do not need to set their
+    colours one by one; the ones that differ (grid, boxes) set them explicitly.
+    """
+    t = THEME
+    root.configure(background=t["window"])
+    for name in ("TkDefaultFont", "TkTextFont", "TkMenuFont", "TkHeadingFont"):
+        tkfont.nametofont(name, root=root).configure(size=FONT_SIZE)
+    for pattern, value in (
+        ("*background", t["window"]),
+        ("*foreground", t["text"]),
+        ("*activeBackground", t["button_active"]),
+        ("*activeForeground", t["text"]),
+        ("*disabledForeground", t["text_disabled"]),
+        ("*highlightThickness", 0),
+        # Also for the buttons of the Tk dialogs (messagebox).
+        ("*Button.background", t["button"]),
+        ("*Button.foreground", t["button_text"]),
+        ("*Button.relief", "flat"),
+        ("*Button.borderWidth", 0),
+        ("*Button.padX", 10),
+        ("*Button.padY", 6),
+    ):
+        root.option_add(pattern, value)
+
+
+class FlatButton(tk.Button):
+    """Flat button; `primary` for the main action of the window.
+
+    Tk changes only the colour of the text of a disabled button:
+    set_enabled() changes also its background.
+    """
+
+    def __init__(self, master: tk.Misc, primary: bool = False, **options) -> None:
+        t = THEME
+        if primary:
+            self.enabled_background = t["button_primary"]
+            colors = dict(
+                foreground=t["button_primary_text"],
+                activebackground=t["button_primary_active"],
+                activeforeground=t["button_primary_text"],
+                font=VALUE_FONT,
+            )
+        else:
+            self.enabled_background = t["button"]
+            colors = dict(
+                foreground=t["button_text"],
+                activebackground=t["button_active"],
+                activeforeground=t["button_text"],
+            )
+        super().__init__(
+            master,
+            background=self.enabled_background,
+            disabledforeground=t["text_disabled"],
+            cursor="hand2",
+            **colors,
+            **options,
+        )
+
+    def set_enabled(self, enabled: bool) -> None:
+        self.config(
+            state="normal" if enabled else "disabled",
+            background=self.enabled_background if enabled else THEME["button_disabled"],
+            cursor="hand2" if enabled else "",
+        )
+
+
+class KeyValueList(tk.Frame):
+    """Lines "label: value" in two columns, the value in bold.
+
+    A line without ": " takes both columns, in grey.
+    """
+
+    def __init__(self, master: tk.Misc, background: str = THEME["window"]) -> None:
+        super().__init__(master, background=background)
+        self.text = ""
+
+    def set_text(self, text: str) -> None:
+        self.text = text
+        for child in self.winfo_children():
+            child.destroy()
+        background = self["background"]
+        for row, line in enumerate(text.splitlines()):
+            label, separator, value = line.partition(": ")
+            if not separator:
+                tk.Label(
+                    self, text=line, background=background, foreground=THEME["text_muted"]
+                ).grid(row=row, column=0, columnspan=2, sticky="w")
+                continue
+            tk.Label(
+                self, text=label, background=background, foreground=THEME["value_label"],
+                wraplength=LABEL_WIDTH, justify="left",
+            ).grid(row=row, column=0, sticky="nw", padx=(0, 12))
+            tk.Label(
+                self, text=value, background=background, foreground=THEME["value"],
+                font=VALUE_FONT,
+            ).grid(row=row, column=1, sticky="nw")
+
+
+def card(master: tk.Misc, title: str) -> tk.Frame:
+    """White box with a bold title; the caller packs it and puts the content
+    in it (with background THEME["surface"])."""
+    t = THEME
+    box = tk.Frame(
+        master, background=t["surface"], padx=16, pady=14,
+        highlightthickness=1, highlightbackground=t["border"], highlightcolor=t["border"],
+    )
+    tk.Label(
+        box, text=title, background=t["surface"],
+        foreground=t["text"], font=CARD_TITLE_FONT,
+    ).pack(anchor="w", pady=(0, 10))
+    return box
+
+
+def hint(master: tk.Misc, text: str) -> tk.Label:
+    """Grey explanation inside a box, wrapped to the width of the panel."""
+    return tk.Label(
+        master, text=text, justify="left", wraplength=PANEL_TEXT_WIDTH,
+        background=THEME["surface"], foreground=THEME["text_muted"],
+    )
+
+
+def prediction_box(master: tk.Misc) -> KeyValueList:
+    """Box "Model prediction" at the bottom of `master`.
+
+    Returns the list inside it, which receives the text of the outputs.
+    """
+    box = card(master, "Model prediction")
+    box.pack(side="bottom", fill="x", pady=(12, 0))
+    values = KeyValueList(box, background=THEME["surface"])
+    values.pack(fill="x")
+    return values
+
+
+def status_bar(master: tk.Misc, textvariable: tk.StringVar) -> tk.Label:
+    """Line of text at the bottom of a window."""
+    return tk.Label(
+        master, textvariable=textvariable, anchor="w", padx=8, pady=4,
+        background=THEME["surface"], foreground=THEME["text_muted"],
+    )
+
+
+def grid_canvas(master: tk.Misc, width: float, height: float) -> tk.Canvas:
+    """Canvas with a thin border, on which the lattice is drawn."""
+    return tk.Canvas(
+        master,
+        width=width,
+        height=height,
+        background=THEME["grid"],
+        highlightthickness=1,
+        highlightbackground=THEME["border"],
+        highlightcolor=THEME["border"],
+    )
 
 
 def fit_grid(
@@ -86,7 +281,8 @@ class ConformationEditor:
     (phase 0). With `on_done` the last button calls ``on_done(sequence,
     coordinates)`` instead and the window stays open, so that more
     conformations can be drawn one after the other (phase
-    ``discriminator_score``); `length` then replaces ``protein.length``.
+    ``discriminator_score``); `length` then replaces ``protein.length``, and
+    a box at the bottom right shows the text given to show_result().
     """
 
     def __init__(
@@ -138,12 +334,10 @@ class ConformationEditor:
     def _build_widgets(self) -> None:
         self.root.title(self.title)
 
-        self.canvas = tk.Canvas(
+        self.canvas = grid_canvas(
             self.root,
-            width=(self.chain.width + 1) * self.initial_cell_size,
-            height=(self.chain.height + 1) * self.initial_cell_size,
-            background="white",
-            highlightthickness=0,
+            (self.chain.width + 1) * self.initial_cell_size,
+            (self.chain.height + 1) * self.initial_cell_size,
         )
         # The canvas takes all the space gained when the window is enlarged;
         # the panel on the right keeps its natural size.
@@ -154,59 +348,85 @@ class ConformationEditor:
         self.canvas.bind("<Configure>", self._on_resize)
 
         panel = tk.Frame(self.root)
-        panel.grid(row=0, column=1, sticky="n", padx=8, pady=8)
+        panel.grid(row=0, column=1, sticky="ns", padx=8, pady=8)
 
-        self.step_label = tk.Label(panel, font=("TkDefaultFont", 11, "bold"))
-        self.step_label.pack(anchor="w")
-        self.counter_label = tk.Label(panel)
-        self.counter_label.pack(anchor="w", pady=(0, 8))
+        # One box per group of controls; the box of the current step has a
+        # blue border (see _refresh).
+        t = THEME
+        box = card(panel, "Progress")
+        box.pack(fill="x", pady=(0, 10))
+        self.info = KeyValueList(box, background=t["surface"])
+        self.info.pack(fill="x")
 
         # Step 1 controls.
-        self.undo_button = tk.Button(panel, text="Undo last residue", command=self._undo)
-        self.undo_button.pack(fill="x")
-        self.clear_button = tk.Button(panel, text="Clear all", command=self._clear)
-        self.clear_button.pack(fill="x")
-        self.to_step2_button = tk.Button(
-            panel, text="Go to step 2 (H/P) →", command=lambda: self._set_step(2)
+        box = card(panel, "Step 1 · Shape of the chain")
+        box.pack(fill="x", pady=(0, 10))
+        hint(box, "Click on a node next to the last residue.").pack(anchor="w", pady=(0, 8))
+        self.undo_button = FlatButton(box, text="Undo last residue", command=self._undo)
+        self.undo_button.pack(fill="x", pady=(0, 4))
+        self.clear_button = FlatButton(box, text="Clear all", command=self._clear)
+        self.clear_button.pack(fill="x", pady=(0, 4))
+        self.to_step2_button = FlatButton(
+            box, text="Go to step 2 (H/P) →", command=lambda: self._set_step(2)
         )
-        self.to_step2_button.pack(fill="x", pady=(0, 12))
+        self.to_step2_button.pack(fill="x")
+        self.step_boxes = {1: box}
 
         # Step 2 controls; the selector doubles as the colour legend.
-        tk.Label(panel, text="Active type / legend").pack(anchor="w")
-        legend_names = {"H": "H — hydrophobic", "P": "P — polar"}
-        self.type_buttons = []
+        box = card(panel, "Step 2 · Type of the residues")
+        box.pack(fill="x", pady=(0, 10))
+        hint(box, "Click on a residue to give it the selected type (H/P keys to switch).").pack(
+            anchor="w", pady=(0, 8)
+        )
+        # One button per type, coloured like its residues (see
+        # _update_type_buttons): the active one is filled with the colour.
+        self.type_buttons: dict[str, tk.Button] = {}
         for residue_type in RESIDUE_TYPES:
-            row = tk.Frame(panel)
-            row.pack(anchor="w")
-            swatch = tk.Canvas(row, width=16, height=16, highlightthickness=0)
-            swatch.create_oval(2, 2, 14, 14, fill=self.colors[residue_type], outline="black")
-            swatch.pack(side="left")
-            button = tk.Radiobutton(
-                row,
-                text=legend_names[residue_type],
-                variable=self.active_type,
-                value=residue_type,
+            button = tk.Button(
+                box,
+                font=VALUE_FONT,
+                relief="flat",
+                borderwidth=0,
+                highlightthickness=2,
+                disabledforeground=t["text_disabled"],
+                command=lambda rt=residue_type: self.active_type.set(rt),
             )
-            button.pack(side="left")
-            self.type_buttons.append(button)
-        row = tk.Frame(panel)
-        row.pack(anchor="w")
-        swatch = tk.Canvas(row, width=16, height=16, highlightthickness=0)
-        swatch.create_oval(2, 2, 14, 14, fill=self.color_untyped, outline="black")
+            button.pack(fill="x", pady=(0, 4))
+            self.type_buttons[residue_type] = button
+            for key in (residue_type.lower(), residue_type):
+                self.root.bind(
+                    f"<KeyPress-{key}>", lambda event, rt=residue_type: self._choose_type(rt)
+                )
+        self.active_type.trace_add("write", lambda *args: self._update_type_buttons())
+        row = tk.Frame(box, background=t["surface"])
+        row.pack(anchor="w", pady=(2, 0))
+        swatch = tk.Canvas(
+            row, width=16, height=16, highlightthickness=0, background=t["surface"]
+        )
+        swatch.create_oval(2, 2, 14, 14, fill=self.color_untyped, outline=t["surface"])
         swatch.pack(side="left")
-        tk.Label(row, text="type not assigned").pack(side="left", padx=(4, 0))
-
-        self.to_step1_button = tk.Button(
-            panel, text="← Back to step 1", command=lambda: self._set_step(1)
+        tk.Label(
+            row, text="type not assigned", background=t["surface"], foreground=t["text_muted"]
+        ).pack(side="left", padx=(4, 0))
+        self.to_step1_button = FlatButton(
+            box, text="← Back to step 1", command=lambda: self._set_step(1)
         )
-        self.to_step1_button.pack(fill="x", pady=(8, 12))
+        self.to_step1_button.pack(fill="x", pady=(8, 0))
+        self.step_boxes[2] = box
 
-        self.save_button = tk.Button(panel, text=self.done_text, command=self._save)
-        self.save_button.pack(fill="x")
-
-        tk.Label(self.root, textvariable=self.status, anchor="w", relief="sunken").grid(
-            row=1, column=0, columnspan=2, sticky="ew"
+        # Main action, out of the boxes.
+        self.save_button = FlatButton(
+            panel, primary=True, text=self.done_text, command=self._save
         )
+        self.save_button.pack(fill="x", ipady=3)
+
+        # Result of on_done, at the bottom of the panel.
+        self.result: KeyValueList | None = None
+        if self.on_done is not None:
+            self.result = prediction_box(panel)
+            self.result_shown = False
+
+        status_bar(self.root, self.status).grid(row=1, column=0, columnspan=2, sticky="ew")
 
     # ------------------------------------------------------------------
     # Event handlers
@@ -260,6 +480,11 @@ class ConformationEditor:
         self.status.set("Chain cleared.")
         self._refresh()
 
+    def _choose_type(self, residue_type: str) -> None:
+        """H/P keys: like the buttons, only during step 2."""
+        if self.step == 2:
+            self.active_type.set(residue_type)
+
     def _set_step(self, step: int) -> None:
         self.step = step
         if step == 1:
@@ -267,6 +492,12 @@ class ConformationEditor:
         else:
             self.status.set("Step 2: choose H or P and click on the residues.")
         self._refresh()
+
+    def show_result(self, text: str) -> None:
+        """Shows the result of on_done in the box at the bottom right."""
+        if self.result is not None:
+            self.result.set_text(text)
+            self.result_shown = True
 
     def _save(self) -> None:
         if self.on_done is not None:
@@ -293,61 +524,447 @@ class ConformationEditor:
     def _refresh(self) -> None:
         """Redraws the canvas and updates labels and button states."""
         self._draw()
+        if self.result is not None:
+            # Every action on the chain makes the last result old.
+            if self.result_shown or not self.result.text:
+                self.result.set_text(f'Press "{self.done_text}" to see\nwhat the model says.')
+            self.result_shown = False
 
         chain = self.chain
-        titles = {1: "Step 1: drawing the chain", 2: "Step 2: assigning H/P"}
-        self.step_label.config(text=titles[self.step])
-        self.counter_label.config(text=f"Residues: {len(chain.positions)}/{chain.length}")
-
-        def state(enabled: bool) -> str:
-            return "normal" if enabled else "disabled"
+        titles = {1: "1 of 2", 2: "2 of 2"}
+        typed = sum(t is not None for t in chain.types)
+        self.info.set_text(
+            f"Step: {titles[self.step]}\n"
+            f"Residues: {len(chain.positions)}/{chain.length}\n"
+            f"With a type: {typed}/{len(chain.positions)}"
+        )
 
         in_step1 = self.step == 1
-        self.undo_button.config(state=state(in_step1 and bool(chain.positions)))
-        self.clear_button.config(state=state(in_step1 and bool(chain.positions)))
-        self.to_step2_button.config(state=state(in_step1 and chain.is_complete))
-        for button in self.type_buttons:
-            button.config(state=state(not in_step1))
-        self.to_step1_button.config(state=state(not in_step1))
-        self.save_button.config(state=state(chain.is_fully_typed))
+        for step, box in self.step_boxes.items():
+            color = THEME["button_primary"] if step == self.step else THEME["border"]
+            box.config(highlightbackground=color, highlightcolor=color)
+        self.undo_button.set_enabled(in_step1 and bool(chain.positions))
+        self.clear_button.set_enabled(in_step1 and bool(chain.positions))
+        self.to_step2_button.set_enabled(in_step1 and chain.is_complete)
+        self._update_type_buttons()
+        self.to_step1_button.set_enabled(not in_step1)
+        self.save_button.set_enabled(chain.is_fully_typed)
+
+    def _update_type_buttons(self) -> None:
+        """The active type is filled with its colour and has a check mark;
+        the other one has its colour on white. Grey during step 1."""
+        t = THEME
+        names = {"H": "H — hydrophobic", "P": "P — polar"}
+        for residue_type, button in self.type_buttons.items():
+            color = self.colors[residue_type]
+            if self.step == 1:
+                button.config(
+                    state="disabled", text=names[residue_type], cursor="",
+                    background=t["button_disabled"], highlightbackground=t["button_disabled"],
+                    highlightcolor=t["button_disabled"],
+                )
+            elif residue_type == self.active_type.get():
+                button.config(
+                    state="normal", text=f"✓  {names[residue_type]}", cursor="hand2",
+                    background=color, foreground=t["residue_label"],
+                    activebackground=color, activeforeground=t["residue_label"],
+                    highlightbackground=color, highlightcolor=color,
+                )
+            else:
+                button.config(
+                    state="normal", text=names[residue_type], cursor="hand2",
+                    background=t["surface"], foreground=color,
+                    activebackground=t["button_disabled"], activeforeground=color,
+                    highlightbackground=t["border"], highlightcolor=t["border"],
+                )
 
     def _pixel(self, cell: Coord) -> tuple[float, float]:
         return cell_to_pixel(cell, self.cell_size, self.origin)
 
     def _draw(self) -> None:
-        canvas = self.canvas
         chain = self.chain
+        self.canvas.delete("all")
+        draw_lattice(self.canvas, range(chain.width), range(chain.height), self._pixel)
+        colors = [
+            self.color_untyped if residue_type is None else self.colors[residue_type]
+            for residue_type in chain.types
+        ]
+        draw_chain(
+            self.canvas,
+            [self._pixel(cell) for cell in chain.positions],
+            colors,
+            self.radius_ratio * self.cell_size,
+        )
+
+
+def draw_lattice(
+    canvas: tk.Canvas,
+    xs: range,
+    ys: range,
+    to_pixel: Callable[[Coord], tuple[float, float]],
+) -> None:
+    """Lattice of the nodes xs x ys: one line per row and per column, with a
+    dot on every node."""
+    left, top = to_pixel((xs[0], ys[0]))
+    right, bottom = to_pixel((xs[-1], ys[-1]))
+    for x in xs:
+        px, _ = to_pixel((x, ys[0]))
+        canvas.create_line(px, top, px, bottom, fill=THEME["lattice"])
+    for y in ys:
+        _, py = to_pixel((xs[0], y))
+        canvas.create_line(left, py, right, py, fill=THEME["lattice"])
+    for x in xs:
+        for y in ys:
+            px, py = to_pixel((x, y))
+            canvas.create_oval(
+                px - 2, py - 2, px + 2, py + 2, fill=THEME["lattice"], outline=""
+            )
+
+
+def draw_chain(
+    canvas: tk.Canvas, points: list[tuple[float, float]], colors: list[str], r: float
+) -> None:
+    """Residues (circles of radius r with their index) at the canvas points,
+    joined by the bonds of the chain."""
+    # A negative font size is in pixels instead of points.
+    font = ("TkDefaultFont", -max(1, round(r)), "bold")
+
+    # Bonds between consecutive residues, drawn before the residues so that
+    # the circles cover the ends of the segments.
+    if len(points) > 1:
+        canvas.create_line(
+            *points, width=max(1, r / 4), fill=THEME["bond"], capstyle="round", joinstyle="round"
+        )
+
+    for index, ((px, py), color) in enumerate(zip(points, colors)):
+        canvas.create_oval(
+            px - r, py - r, px + r, py + r, fill=color, outline=THEME["residue_outline"]
+        )
+        canvas.create_text(px, py, text=str(index), fill=THEME["residue_label"], font=font)
+
+
+def hh_contacts(sequence: str, coordinates: list[Coord]) -> list[tuple[int, int]]:
+    """Pairs of H residues adjacent on the lattice but not consecutive in the
+    chain: each one lowers the energy by 1."""
+    index = {cell: i for i, cell in enumerate(coordinates)}
+    pairs = []
+    for i, (x, y) in enumerate(coordinates):
+        for cell in ((x + 1, y), (x, y + 1)):
+            j = index.get(cell)
+            if j is not None and abs(i - j) > 1 and sequence[i] == sequence[j] == "H":
+                pairs.append((min(i, j), max(i, j)))
+    return sorted(pairs)
+
+
+def interpolate(a: list[Coord], b: list[Coord], t: float) -> list[tuple[float, float]]:
+    """Positions of the residues a fraction t (0 ... 1) of the way from a to b."""
+    return [(xa + (xb - xa) * t, ya + (yb - ya) * t) for (xa, ya), (xb, yb) in zip(a, b)]
+
+
+class FoldingAnimation:
+    """Window that shows, move after move, the path from a conformation to the
+    native state (phase ``discriminator_score``).
+
+    The window opens on the starting conformation; ``play(path)`` gives it the
+    path (a hpfold.folding_path.FoldingPath) and starts the animation. Every
+    move slides the residues from one frame to the next in
+    ``gui.animation_move_ms`` and then waits ``gui.animation_pause_ms``. The
+    dashed lines are the H-H contacts.
+
+    `prediction`, if given, is shown at the bottom right (the outputs of the
+    decoy discriminator).
+
+    The Pause/Play button stops the animation and resumes it from where it
+    stopped. While it is stopped, the previous and next move buttons slide the
+    chain one move backwards or forwards.
+    """
+
+    # Intermediate positions drawn while the residues slide.
+    TWEEN_FRAMES = 20
+    # The canvas of the grid is a square at least this large and at least as
+    # tall as the panel, but leaving this margin on the screen (title bar,
+    # status bar, taskbar): a larger window could push the buttons out of it.
+    MIN_CANVAS_SIDE = 640
+    SCREEN_MARGIN = 160
+
+    def __init__(
+        self,
+        master: tk.Misc,
+        config: dict,
+        sequence: str,
+        coordinates: list[Coord],
+        on_close: Callable[[], None] | None = None,
+        prediction: str | None = None,
+        title: str = "hpfold — folding to the native state",
+    ) -> None:
+        gui = config["gui"]
+        self.prediction = prediction
+        self.radius_ratio = gui["residue_radius"] / gui["cell_size"]
+        self.colors = {"H": gui["color_h"], "P": gui["color_p"]}
+        self.move_ms = gui["animation_move_ms"]
+        self.pause_ms = gui["animation_pause_ms"]
+        self.on_close = on_close
+
+        self.sequence = sequence
+        self.frames = [list(coordinates)]
+        self.captions = ["Start"]
+        # Frame shown, or left by the slide in progress; frame the slide goes
+        # to (None when the chain is still) and fraction of the way done.
+        self.frame = 0
+        self.target: int | None = None
+        self.tween = 0.0
+        # True while the animation goes on by itself, False when it is
+        # stopped (also while a single move asked by the user slides).
+        self.playing = False
+        self._job: str | None = None
+
+        self.window = tk.Toplevel(master)
+        self.window.title(title)
+        self.window.protocol("WM_DELETE_WINDOW", self._close)
+        self.status = tk.StringVar()
+        self._set_bounds()
+        self._build_widgets()
+        self._draw()
+
+    def _build_widgets(self) -> None:
+        # Size fixed at the end, once the size of the panel is known.
+        self.canvas = grid_canvas(self.window, self.MIN_CANVAS_SIDE, self.MIN_CANVAS_SIDE)
+        self.canvas.grid(row=0, column=0, sticky="nsew", padx=8, pady=8)
+        self.window.columnconfigure(0, weight=1)
+        self.window.rowconfigure(0, weight=1)
+        self.canvas.bind("<Configure>", lambda event: self._fit(event.width, event.height))
+
+        panel = tk.Frame(self.window)
+        panel.grid(row=0, column=1, sticky="ns", padx=8, pady=8)
+        if self.prediction is not None:
+            prediction_box(panel).set_text(self.prediction)
+
+        # Same boxes as the panel of ConformationEditor; the box of the
+        # controls that can be used now has a blue border (see _update_buttons).
+        box = card(panel, "Path to the native state")
+        box.pack(fill="x", pady=(0, 10))
+        self.info = KeyValueList(box, background=THEME["surface"])
+        self.info.pack(fill="x")
+        self.info.set_text(f"Sequence: {self.sequence}")
+
+        box = card(panel, "Playback")
+        box.pack(fill="x", pady=(0, 10))
+        hint(box, "Space key: pause/play.").pack(anchor="w", pady=(0, 8))
+        self.play_button = FlatButton(box, primary=True, text="⏸ Pause", command=self._toggle)
+        self.play_button.pack(fill="x", pady=(0, 4), ipady=3)
+        self.restart_button = FlatButton(box, text="Restart", command=self._restart)
+        self.restart_button.pack(fill="x")
+        self.control_boxes = {"playback": box}
+
+        box = card(panel, "Step by step")
+        box.pack(fill="x", pady=(0, 10))
+        hint(box, "When paused, one move at a time (←/→ keys).").pack(anchor="w", pady=(0, 8))
+        self.back_button = FlatButton(
+            box, text="← Previous move", command=lambda: self._go(-1)
+        )
+        self.back_button.pack(fill="x", pady=(0, 4))
+        self.next_button = FlatButton(box, text="Next move →", command=lambda: self._go(1))
+        self.next_button.pack(fill="x")
+        self.control_boxes["step"] = box
+        self.window.bind("<space>", lambda event: self._toggle())
+        self.window.bind("<Left>", lambda event: self._go(-1))
+        self.window.bind("<Right>", lambda event: self._go(1))
+
+        status_bar(self.window, self.status).grid(row=1, column=0, columnspan=2, sticky="ew")
+        self._update_buttons()
+
+        # The grid takes more room than the panel, as long as the screen has
+        # room for it.
+        self.window.update_idletasks()
+        side = min(
+            max(self.MIN_CANVAS_SIDE, panel.winfo_reqheight()),
+            self.window.winfo_screenheight() - self.SCREEN_MARGIN,
+            self.window.winfo_screenwidth() - panel.winfo_reqwidth() - self.SCREEN_MARGIN,
+        )
+        self.canvas.config(width=side, height=side)
+        self._fit(side, side)
+
+    # ------------------------------------------------------------------
+    # Path and playback
+
+    def set_status(self, text: str) -> None:
+        self.status.set(text)
+
+    def show_message(self, text: str) -> None:
+        """Box with the text in the middle of the window, over the chain."""
+        self.hide_message()
+        self._message = tk.Frame(
+            self.window, padx=24, pady=16, background=THEME["surface"],
+            highlightthickness=1, highlightbackground=THEME["border"],
+            highlightcolor=THEME["border"],
+        )
+        tk.Label(
+            self._message, text=text, font=TITLE_FONT,
+            background=THEME["surface"],
+        ).pack()
+        self._message.place(in_=self.canvas, relx=0.5, rely=0.5, anchor="center")
+
+    def hide_message(self) -> None:
+        if getattr(self, "_message", None) is not None:
+            self._message.destroy()
+            self._message = None
+
+    def play(self, path) -> None:
+        """Takes the frames of the path and starts the animation."""
+        self.frames = path.frames
+        self.captions = [f"Start: energy {path.start_energy}, {len(path.steps)} moves to go"]
+        for i, step in enumerate(path.steps, start=1):
+            self.captions.append(
+                f"Move {i}/{len(path.steps)}: {step.move_type} at residue {step.residue}"
+                f" — energy {step.energy}, {step.distance} moves left"
+            )
+        if path.steps:
+            self.captions[-1] += " — native state reached"
+        else:
+            self.captions[0] = f"The conformation is already native (energy {path.start_energy})"
+        self.info.set_text(
+            f"Sequence: {path.sequence}\n"
+            f"Lowest energy (exact): {path.target_energy}\n"
+            f"Native states: {path.n_native}\n"
+            f"Moves to the native state: {len(path.steps)}"
+        )
+        self._set_bounds()
+        self._fit(self.canvas.winfo_width(), self.canvas.winfo_height())
+        self._restart()
+
+    def _restart(self) -> None:
+        self._cancel()
+        self.frame, self.target, self.tween = 0, None, 0.0
+        self.playing = len(self.frames) > 1
+        self._show_frame()
+        if self.playing:
+            self._job = self.window.after(self.pause_ms, self._next_move)
+
+    def _toggle(self) -> None:
+        """Pause/Play: stops the animation or resumes it from where it is."""
+        if self.playing:
+            # A move halfway is not cut: it ends, and then the chain stays.
+            self.playing = False
+            if self.target is None:
+                self._cancel()
+            self._update_buttons()
+        elif self.target is None and self.frame == len(self.frames) - 1:
+            # At the native state Play starts again from the beginning.
+            self._restart()
+        elif len(self.frames) > 1:
+            self.playing = True
+            self._update_buttons()
+            if self.target is None:
+                self._next_move()
+
+    def _go(self, delta: int) -> None:
+        """Slides the chain to the previous (-1) or the next (+1) frame.
+
+        Only while the animation is stopped and the chain is still.
+        """
+        if self.playing or self.target is not None:
+            return
+        if 0 <= self.frame + delta < len(self.frames):
+            self._start_slide(self.frame + delta)
+
+    def _next_move(self) -> None:
+        self._job = None
+        if self.frame < len(self.frames) - 1:
+            self._start_slide(self.frame + 1)
+
+    def _start_slide(self, target: int) -> None:
+        self.target, self.tween = target, 0.0
+        self._update_buttons()
+        self._slide()
+
+    def _slide(self) -> None:
+        """One intermediate position of the move from the frame to the target."""
+        self.tween += 1 / self.TWEEN_FRAMES
+        if self.tween < 1 - 1e-9:
+            self._draw()
+            self._job = self.window.after(
+                max(1, self.move_ms // self.TWEEN_FRAMES), self._slide
+            )
+            return
+        self.frame, self.target, self.tween = self.target, None, 0.0
+        self._job = None
+        if self.frame == len(self.frames) - 1:
+            self.playing = False
+        self._show_frame()
+        if self.playing:
+            self._job = self.window.after(self.pause_ms, self._next_move)
+
+    def _cancel(self) -> None:
+        if self._job is not None:
+            self.window.after_cancel(self._job)
+            self._job = None
+
+    def _close(self) -> None:
+        self._cancel()
+        self.window.destroy()
+        if self.on_close is not None:
+            self.on_close()
+
+    def _show_frame(self) -> None:
+        self.status.set(self.captions[self.frame])
+        self._update_buttons()
+        self._draw()
+
+    def _update_buttons(self) -> None:
+        has_moves = len(self.frames) > 1
+        # One move at a time: only while stopped and with the chain still.
+        still = not self.playing and self.target is None
+        self.play_button.config(text="⏸ Pause" if self.playing else "▶ Play")
+        self.play_button.set_enabled(has_moves)
+        self.back_button.set_enabled(still and self.frame > 0)
+        self.next_button.set_enabled(still and self.frame < len(self.frames) - 1)
+        self.restart_button.set_enabled(has_moves)
+        # Blue border: playback while it plays, step by step while paused.
+        active = None if not has_moves else "playback" if self.playing else "step"
+        for name, box in self.control_boxes.items():
+            color = THEME["button_primary"] if name == active else THEME["border"]
+            box.config(highlightbackground=color, highlightcolor=color)
+
+    # ------------------------------------------------------------------
+    # Drawing
+
+    def _set_bounds(self) -> None:
+        """Lattice shown: the box of all the frames, with one free node around."""
+        cells = [cell for frame in self.frames for cell in frame]
+        self.xs = range(min(x for x, _ in cells) - 1, max(x for x, _ in cells) + 2)
+        self.ys = range(min(y for _, y in cells) - 1, max(y for _, y in cells) + 2)
+
+    def _fit(self, width: int, height: int) -> None:
+        self.cell_size, self.origin = fit_grid(width, height, len(self.xs), len(self.ys))
+        if hasattr(self, "play_button"):
+            self._draw()
+
+    def _pixel(self, cell: tuple[float, float]) -> tuple[float, float]:
+        x, y = cell
+        return cell_to_pixel((x - self.xs[0], y - self.ys[0]), self.cell_size, self.origin)
+
+    def _draw(self) -> None:
+        canvas = self.canvas
         canvas.delete("all")
-
-        # Lattice: one line per row and per column, with a dot on every node.
-        left, top = self._pixel((0, 0))
-        right, bottom = self._pixel((chain.width - 1, chain.height - 1))
-        for x in range(chain.width):
-            px, _ = self._pixel((x, 0))
-            canvas.create_line(px, top, px, bottom, fill="#d0d0d0")
-        for y in range(chain.height):
-            _, py = self._pixel((0, y))
-            canvas.create_line(left, py, right, py, fill="#d0d0d0")
-        for x in range(chain.width):
-            for y in range(chain.height):
-                px, py = self._pixel((x, y))
-                canvas.create_oval(px - 2, py - 2, px + 2, py + 2, fill="#a0a0a0", outline="")
-
-        # Residues, bonds and indices scale with the grid.
+        draw_lattice(canvas, self.xs, self.ys, self._pixel)
+        frame = self.frames[self.frame]
         r = self.radius_ratio * self.cell_size
-        # A negative font size is in pixels instead of points.
-        font = ("TkDefaultFont", -max(1, round(r)))
-
-        # Bonds between consecutive residues, drawn before the residues so
-        # that the circles cover the ends of the segments.
-        points = [self._pixel(cell) for cell in chain.positions]
-        if len(points) > 1:
-            canvas.create_line(*points, width=max(1, r / 4), fill="black")
-
-        for index, ((px, py), residue_type) in enumerate(zip(points, chain.types)):
-            color = self.color_untyped if residue_type is None else self.colors[residue_type]
-            canvas.create_oval(px - r, py - r, px + r, py + r, fill=color, outline="black")
-            canvas.create_text(px, py, text=str(index), fill="white", font=font)
+        if self.target is not None:
+            positions = interpolate(frame, self.frames[self.target], self.tween)
+        else:
+            positions = frame
+            # The contacts are drawn only when the chain is on the lattice.
+            for i, j in hh_contacts(self.sequence, frame):
+                canvas.create_line(
+                    *self._pixel(frame[i]), *self._pixel(frame[j]),
+                    width=max(1, r / 6), dash=(4, 4), fill=THEME["bond"],
+                )
+        draw_chain(
+            canvas,
+            [self._pixel(cell) for cell in positions],
+            [self.colors[c] for c in self.sequence],
+            r,
+        )
 
 
 class StartDialog:
@@ -379,7 +996,7 @@ class StartDialog:
         content = tk.Frame(self.window, padx=24, pady=16)
         content.pack(expand=True)
 
-        tk.Label(content, text=question, font=("TkDefaultFont", 11, "bold")).pack(
+        tk.Label(content, text=question, font=TITLE_FONT).pack(
             pady=(0, 12)
         )
         tk.Label(content, justify="center", text=details).pack(pady=(0, 16))
@@ -387,8 +1004,9 @@ class StartDialog:
         buttons = tk.Frame(content)
         buttons.pack()
         for text, answer in (("Yes", True), ("No", False), ("Cancel", None)):
-            tk.Button(
-                buttons, text=text, width=8, command=lambda a=answer: self._choose(a)
+            FlatButton(
+                buttons, primary=answer is True, text=text, width=8,
+                command=lambda a=answer: self._choose(a),
             ).pack(side="left", padx=4)
 
         # The window cannot be made smaller than its content.
@@ -464,6 +1082,7 @@ def hidden_root() -> tk.Tk:
     """Main window of a phase, hidden until the first question is answered."""
     root = tk.Tk()
     root.withdraw()
+    apply_theme(root)
     # Tk translates the buttons of its dialogs (Yes/No/Cancel) to the system
     # language: force English, like the rest of the interface.
     root.tk.call("::msgcat::mclocale", "en")

@@ -248,11 +248,24 @@ python -m hpfold --config config/default.toml discriminator_score
 
 La fase carica il modello salvato da `discriminator_train` e apre una finestra che chiede se disegnare la conformazione da giudicare, come la fase `gui` per la configurazione iniziale del REMC:
 
-- **Yes**: si apre l'editor della fase 0 (catena di `discriminator_dataset.length` residui, poi i tipi H/P). Il pulsante **Evaluate** mostra il giudizio; la finestra resta aperta, così si possono provare più conformazioni una dopo l'altra.
+- **Yes**: si apre l'editor della fase 0 (catena di `discriminator_dataset.length` residui, poi i tipi H/P). Il pulsante **Evaluate** mostra il giudizio in basso a destra nella stessa finestra; la finestra resta aperta, così si possono provare più conformazioni una dopo l'altra.
 - **No**: si usa la conformazione del file `discriminator_model.input_conformation`, di default [config/discriminator_input.toml](../config/discriminator_input.toml), un file TOML a parte con `sequence` e `coordinates`.
 - **Cancel**: esce senza fare nulla.
 
-Il risultato compare in una finestra ed è stampato anche sul terminale: verdetto (nativo se `prob` ≥ 0,5), probabilità di nativo, logit, energia prevista accanto a quella esatta (meno i contatti H-H), energia minima prevista della sequenza e gap previsto. La conformazione è controllata prima di arrivare al modello: deve avere la lunghezza su cui il modello è stato allenato ed essere un self-avoiding walk.
+Il risultato è stampato sul terminale e compare nel riquadro **Model prediction**, in basso a destra nella finestra dell'animazione (§9.2) e, con **Yes**, anche nell'editor (non si apre una finestra a parte): verdetto (nativo se `prob` ≥ 0,5), probabilità di nativo, logit, energia prevista accanto a quella esatta (meno i contatti H-H), energia minima prevista della sequenza e gap previsto. La conformazione è controllata prima di arrivare al modello: deve avere la lunghezza su cui il modello è stato allenato ed essere un self-avoiding walk.
+
+### 9.2 Animazione del percorso verso lo stato nativo
+
+Dopo il giudizio si apre una finestra che mostra, mossa dopo mossa, come la conformazione arriva allo stato nativo. **Il modello non partecipa**: il percorso viene dall'oracolo esatto del policy dataset ([folding_path.py](../python/hpfold/folding_path.py), [policy_dataset.md](policy_dataset.md) §7).
+
+1. **Grafo di tutte le conformazioni.** `StateGraph(N, enumerate_states(N))`: per N = 16 sono 802 075 stati, circa 5 secondi. Non dipende dalla sequenza: si costruisce alla prima richiesta e si tiene in memoria per tutta la sessione.
+2. **Oracolo della sequenza.** `Oracle(grafo, sequenza)`: gli stati nativi sono **tutte** le conformazioni a energia minima; una BFS all'indietro dà a ogni stato il numero minimo di mosse che lo separa dal nativo più vicino (circa 1,5 secondi, poi in cache).
+3. **Discesa.** Dalla conformazione (forma canonica con `canonical_key`) si prova ogni mossa possibile (`action_moves`) e si tengono quelle che portano da distanza *d* a *d − 1*. Se sono più di una si prende quella che abbassa di più l'energia, poi quella dello slot più basso: il percorso è sempre lo stesso. Si ripete fino a *d* = 0. L'ultimo stato è **lo stato nativo associato** alla conformazione: il più vicino in numero di mosse, uno dei possibili nativi degeneri.
+4. **Frame del disegno.** Le mosse sono applicate alla catena così come è stata disegnata, non alla forma canonica: i residui che una mossa non tocca restano fermi, e i fotogrammi si possono animare uno dopo l'altro. Ogni passo controlla che la conformazione ottenuta sia proprio quella a distanza *d − 1*.
+
+Il percorso è stampato sul terminale (energia e mosse rimaste dopo ogni mossa, coordinate del nativo). Nella finestra ogni mossa fa scorrere i residui in `gui.animation_move_ms` millisecondi, poi la catena si ferma per `gui.animation_pause_ms`; le linee tratteggiate sono i contatti H-H. **Pause/Play** (o spazio) ferma l'animazione e la fa riprendere da dove era; una mossa a metà viene completata prima di fermarsi. Da ferma, **Previous move** e **Next move** (o ← e →) fanno scorrere la catena di una mossa indietro o avanti; durante la riproduzione sono disattivati. **Restart** ricomincia dall'inizio.
+
+Il calcolo è fatto solo per catene fino a `policy_dataset.exact_max_length` residui (16): oltre, il grafo di tutte le conformazioni sarebbe troppo grande e la finestra mostra solo la conformazione con un messaggio.
 
 ---
 
@@ -287,9 +300,12 @@ Il risultato compare in una finestra ed è stampato anche sul terminale: verdett
 | [discriminator_model.py](../python/hpfold/discriminator_model.py)      | input, modello, baseline, training, metriche, file                            |
 | [discriminator_dataset.py](../python/hpfold/discriminator_dataset.py)  | `load_split`, `model_inputs`: lettura del dataset                            |
 | [policy_dataset.py](../python/hpfold/policy_dataset.py)                | `contact_map`                                                                |
-| [discriminator_score.py](../python/hpfold/discriminator_score.py)      | fase `discriminator_score`: file di input, controlli, finestra del giudizio (§9.1) |
+| [discriminator_score.py](../python/hpfold/discriminator_score.py)      | fase `discriminator_score`: file di input, controlli, giudizio e animazione (§9.1) |
+| [folding_path.py](../python/hpfold/folding_path.py)                    | percorso più breve verso lo stato nativo, dall'oracolo esatto (§9.2)         |
+| [gui.py](../python/hpfold/gui.py)                                      | `FoldingAnimation`: finestra dell'animazione (§9.2)                          |
 | [test_discriminator_model.py](../tests/test_discriminator_model.py)    | i test (§12)                                                                 |
 | [test_discriminator_score.py](../tests/test_discriminator_score.py)    | i test della fase `discriminator_score`                                      |
+| [test_folding_path.py](../tests/test_folding_path.py)                  | i test del percorso verso lo stato nativo                                    |
 
 Le funzioni principali di `discriminator_model.py`:
 

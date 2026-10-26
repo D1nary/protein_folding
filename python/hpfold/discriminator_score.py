@@ -3,9 +3,17 @@ conformation, from the command line.
 
 A first window asks whether to draw the conformation in the GUI or to use the
 one of the file ``discriminator_model.input_conformation`` (a separate TOML
-file in config/). The outputs of the model are shown in a window and printed
-on the terminal. When the conformation is drawn, the editor stays open: more
+file in config/). When the conformation is drawn, the editor stays open: more
 conformations can be judged one after the other.
+
+After the judgement a window animates, move after move, the shortest path
+from the conformation to the nearest native state. The path does not come
+from the model but from the exact oracle of the policy dataset
+(hpfold.folding_path); it is printed on the terminal too.
+
+The outputs of the model are printed on the terminal and shown at the bottom
+right of the window of the animation and, when the conformation is drawn, of
+the editor.
 
 The model is the one saved by phase ``discriminator_train`` in
 ``output.discriminator_model_dir``.
@@ -19,6 +27,7 @@ import numpy as np
 import torch
 
 from hpfold import discriminator_model as dm
+from hpfold import folding_path as fp
 from hpfold import gui
 from hpfold.conformation import Coord, validate_conformation
 from hpfold.policy_dataset import contact_map
@@ -86,6 +95,54 @@ def format_result(sequence: str, result: dict) -> str:
     ])
 
 
+def animate_folding(
+    root,
+    config: dict,
+    sequence: str,
+    coordinates: list[Coord],
+    on_close=None,
+    prediction: str | None = None,
+) -> gui.FoldingAnimation:
+    """Opens the window of the path to the native state and starts it.
+
+    `prediction` is the text of the outputs of the model, shown in the window.
+
+    The window shows the conformation, with a pop-up over it, while the path
+    is computed: the first time the graph of all the conformations is built,
+    which takes a few seconds.
+    """
+    animation = gui.FoldingAnimation(
+        root, config, sequence, coordinates, on_close=on_close, prediction=prediction
+    )
+    message = "Computing the path to the native state..."
+    animation.set_status(message)
+    animation.show_message(message)
+    animation.window.config(cursor="watch")
+
+    def compute() -> None:
+        if not animation.window.winfo_exists():
+            return  # window closed before the computation started
+        try:
+            path = fp.fold_to_native(
+                sequence, coordinates, config["policy_dataset"]["exact_max_length"]
+            )
+        except ValueError as error:
+            animation.set_status(f"No path to the native state: {error}")
+            print(f"No path to the native state: {error}\n")
+        else:
+            print(fp.format_path(path) + "\n")
+            animation.play(path)
+        finally:
+            animation.hide_message()
+            animation.window.config(cursor="")
+
+    # The computation blocks the window until it ends: it starts only after
+    # the window and the pop-up have been drawn.
+    animation.window.update()
+    animation.window.after(100, compute)
+    return animation
+
+
 def run(config: dict) -> None:
     """Asks for a conformation (GUI or file) and shows what the model says."""
     model_dir = Path(config["output"]["discriminator_model_dir"])
@@ -97,10 +154,17 @@ def run(config: dict) -> None:
     length = model.hyperparameters["length"]
     input_path = Path(config["discriminator_model"]["input_conformation"])
 
-    def show(sequence: str, coordinates: list[Coord]) -> None:
+    editor = None
+
+    def show(sequence: str, coordinates: list[Coord], on_close=None) -> None:
+        # The outputs go to the terminal, to the editor (if the conformation
+        # was drawn) and to the window of the animation.
         text = format_result(sequence, evaluate(model, sequence, coordinates))
         print(text + "\n")
-        messagebox.showinfo("Decoy discriminator", text)
+        if editor is not None:
+            editor.show_result(text)
+        animate_folding(root, config, sequence, coordinates, on_close=on_close,
+                        prediction=text)
 
     root = gui.hidden_root()
     draw_new = gui.StartDialog(
@@ -120,9 +184,11 @@ def run(config: dict) -> None:
             sequence, coordinates = load_input(input_path, length)
         except (OSError, KeyError, ValueError, tomllib.TOMLDecodeError) as error:
             messagebox.showerror("Error", f"{input_path}: {error}")
-        else:
-            show(sequence, coordinates)
-        root.destroy()
+            root.destroy()
+            return
+        # The phase ends when the window of the animation is closed.
+        show(sequence, coordinates, on_close=root.destroy)
+        root.mainloop()
         return
 
     editor = gui.ConformationEditor(

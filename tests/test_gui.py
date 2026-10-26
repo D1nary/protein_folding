@@ -49,6 +49,23 @@ def test_fit_grid_keeps_the_whole_grid_inside_the_canvas():
     assert right <= 333 - cell_size / 2 and bottom <= 211 - cell_size / 2
 
 
+def test_hh_contacts_skip_consecutive_and_polar_residues():
+    # A square of 4 residues closed by a contact between 0 and 3, and a P at
+    # the end of the chain next to residue 0.
+    coordinates = [(0, 0), (1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0)]
+    assert gui.hh_contacts("HHHHHP", coordinates) == [(0, 3)]
+    assert gui.hh_contacts("HHHHHH", coordinates) == [(0, 3), (0, 5)]
+    assert gui.hh_contacts("PHHPHP", coordinates) == []
+
+
+def test_interpolate_moves_the_residues_in_a_straight_line():
+    a = [(0, 0), (1, 0)]
+    b = [(0, 0), (1, 2)]
+    assert gui.interpolate(a, b, 0) == [(0, 0), (1, 0)]
+    assert gui.interpolate(a, b, 0.5) == [(0, 0), (1, 1)]
+    assert gui.interpolate(a, b, 1) == [(0, 0), (1, 2)]
+
+
 def make_config(tmp_path, sequence="HPHPPH", length=6):
     return {
         # The GUI does not use [lattice]: a small grid shows that it is ignored.
