@@ -8,6 +8,7 @@ of the moves and the JSON file are handled by ``hpfold.conformation``.
 """
 
 import tkinter as tk
+from collections.abc import Callable
 from pathlib import Path
 from tkinter import messagebox
 
@@ -79,13 +80,32 @@ def cell_to_pixel(
 
 
 class ConformationEditor:
-    """Window with the grid, the controls of the two steps and the status bar."""
+    """Window with the grid, the controls of the two steps and the status bar.
 
-    def __init__(self, root: tk.Tk, config: dict) -> None:
+    By default the drawn conformation is saved to ``protein.initial_conformation``
+    (phase 0). With `on_done` the last button calls ``on_done(sequence,
+    coordinates)`` instead and the window stays open, so that more
+    conformations can be drawn one after the other (phase
+    ``discriminator_score``); `length` then replaces ``protein.length``.
+    """
+
+    def __init__(
+        self,
+        root: tk.Tk,
+        config: dict,
+        length: int | None = None,
+        on_done: Callable[[str, list[Coord]], None] | None = None,
+        done_text: str = "Save",
+        title: str = "hpfold — initial conformation",
+    ) -> None:
         self.root = root
         self.output_path = Path(config["protein"]["initial_conformation"])
-        side = grid_side(config)
-        self.chain = Chain(side, side, config["protein"]["length"])
+        self.on_done = on_done
+        self.done_text = done_text
+        self.title = title
+        length = config["protein"]["length"] if length is None else length
+        side = _core.free_lattice_side(length)
+        self.chain = Chain(side, side, length)
 
         gui = config["gui"]
         # Size of the grid when the window opens. Resizing the window changes
@@ -116,7 +136,7 @@ class ConformationEditor:
     # Construction of the window
 
     def _build_widgets(self) -> None:
-        self.root.title("hpfold — initial conformation")
+        self.root.title(self.title)
 
         self.canvas = tk.Canvas(
             self.root,
@@ -181,7 +201,7 @@ class ConformationEditor:
         )
         self.to_step1_button.pack(fill="x", pady=(8, 12))
 
-        self.save_button = tk.Button(panel, text="Save", command=self._save)
+        self.save_button = tk.Button(panel, text=self.done_text, command=self._save)
         self.save_button.pack(fill="x")
 
         tk.Label(self.root, textvariable=self.status, anchor="w", relief="sunken").grid(
@@ -222,7 +242,9 @@ class ConformationEditor:
             return
         self.chain.set_type(index, self.active_type.get())
         if self.chain.is_fully_typed:
-            self.status.set("All residues have a type: the conformation can now be saved.")
+            self.status.set(
+                f"All residues have a type: press \"{self.done_text}\" to continue."
+            )
         else:
             self.status.set(f"Residue {index}: type {self.active_type.get()}.")
 
@@ -247,6 +269,9 @@ class ConformationEditor:
         self._refresh()
 
     def _save(self) -> None:
+        if self.on_done is not None:
+            self.on_done(self.chain.sequence, list(self.chain.positions))
+            return
         if self.output_path.exists() and not messagebox.askyesno(
             "Overwrite?", f"The file {self.output_path} already exists. Overwrite it?"
         ):
@@ -333,13 +358,19 @@ class StartDialog:
     resized.
     """
 
-    def __init__(self, root: tk.Tk, default_sequence: str) -> None:
+    def __init__(
+        self,
+        root: tk.Tk,
+        details: str,
+        title: str = "Initial conformation",
+        question: str = "Do you want to draw a new protein?",
+    ) -> None:
         # True = draw a new protein, False = use the default one,
         # None = dialog closed without choosing.
         self.answer: bool | None = None
 
         self.window = tk.Toplevel(root)
-        self.window.title("Initial conformation")
+        self.window.title(title)
         # Closing the window from the title bar is the same as "Cancel".
         self.window.protocol("WM_DELETE_WINDOW", self.window.destroy)
 
@@ -348,18 +379,10 @@ class StartDialog:
         content = tk.Frame(self.window, padx=24, pady=16)
         content.pack(expand=True)
 
-        tk.Label(
-            content,
-            text="Do you want to draw a new protein?",
-            font=("TkDefaultFont", 11, "bold"),
-        ).pack(pady=(0, 12))
-        tk.Label(
-            content,
-            justify="center",
-            text="Yes: you draw the chain and assign the H/P types.\n"
-            "No: the default protein of the configuration file is used\n"
-            f"(sequence {default_sequence}).",
-        ).pack(pady=(0, 16))
+        tk.Label(content, text=question, font=("TkDefaultFont", 11, "bold")).pack(
+            pady=(0, 12)
+        )
+        tk.Label(content, justify="center", text=details).pack(pady=(0, 16))
 
         buttons = tk.Frame(content)
         buttons.pack()
@@ -406,14 +429,13 @@ def write_default_conformation(config: dict) -> Path:
 
 def run(config: dict) -> None:
     """Opens the grid and saves the configuration drawn by the user."""
-    root = tk.Tk()
-    # The window stays hidden until the user has answered the first question.
-    root.withdraw()
-    # Tk translates the buttons of its dialogs (Yes/No/Cancel) to the system
-    # language: force English, like the rest of the interface.
-    root.tk.call("::msgcat::mclocale", "en")
-
-    draw_new = StartDialog(root, config["protein"]["sequence"]).ask()
+    root = hidden_root()
+    draw_new = StartDialog(
+        root,
+        "Yes: you draw the chain and assign the H/P types.\n"
+        "No: the default protein of the configuration file is used\n"
+        f"(sequence {config['protein']['sequence']}).",
+    ).ask()
     if draw_new is None:
         # Dialog cancelled: nothing is written.
         root.destroy()
@@ -435,7 +457,21 @@ def run(config: dict) -> None:
         root.destroy()
         return
 
-    editor = ConformationEditor(root, config)
+    show_editor(root, ConformationEditor(root, config))
+
+
+def hidden_root() -> tk.Tk:
+    """Main window of a phase, hidden until the first question is answered."""
+    root = tk.Tk()
+    root.withdraw()
+    # Tk translates the buttons of its dialogs (Yes/No/Cancel) to the system
+    # language: force English, like the rest of the interface.
+    root.tk.call("::msgcat::mclocale", "en")
+    return root
+
+
+def show_editor(root: tk.Tk, editor: ConformationEditor) -> None:
+    """Shows the hidden main window with the editor and waits until it is closed."""
     root.deiconify()
     # The window opens at its natural size and can be shrunk down to half of
     # it, but never so much that the controls on the right get cut off.

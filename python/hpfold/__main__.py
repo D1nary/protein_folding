@@ -14,6 +14,13 @@ def discriminator_train(config: dict) -> None:
     discriminator_model.run(config)
 
 
+def discriminator_score(config: dict) -> None:
+    # Needs torch too, like discriminator_train.
+    from hpfold import discriminator_score
+
+    discriminator_score.run(config)
+
+
 # Maps each phase name accepted on the command line to the function that runs
 # it. Every function takes the loaded configuration as its only argument.
 # The functions are stored without being called (no parentheses): the chosen
@@ -28,6 +35,8 @@ PHASES = {
     "discriminator_dataset": discriminator_dataset.run,
     # Training and evaluation of the decoy discriminator (needs torch).
     "discriminator_train": discriminator_train,
+    # Judgement of one conformation, drawn in the GUI or read from a file.
+    "discriminator_score": discriminator_score,
     "train": ml.run,
 }
 

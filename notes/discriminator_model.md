@@ -147,7 +147,73 @@ Calcolate da `evaluate` su validation e test:
 
 ## 7. Risultati
 
-RISULTATI
+Dataset di default: 2000 sequenze di 16 residui (1600 train, 200 validation, 200 test), 50 354 esempi di train e 6230 di test. Configurazione di default.
+
+### 7.1 Confronto sul test
+
+```
+modello  accuratezza  AUROC   nativi  near   mid    far    trappole
+GNN      0,981        0,9994  0,970   0,982  1,000  1,000  0,980
+B1b      0,965        0,9950  0,963   0,919  1,000  1,000  0,935
+B0b      0,920        0,9750  0,936   0,757  1,000  1,000  0,793
+B0a      0,793        0,8710  0,835   0,439  0,911  1,000  0,577
+```
+
+(le colonne da "nativi" a "trappole" sono l'accuratezza dentro ciascun gruppo)
+
+- **B0a → B0b** (da 79% a 92%): sapere qualcosa della sequenza conta molto. La sola energia non basta, perché la stessa energia è nativa per una sequenza e un decoy per un'altra; già un limite grezzo su E_min dalle parità degli H risolve gran parte dei casi.
+- **B0b → B1b → GNN** sulla fascia `near` (76% → 92% → 98%): i decoy difficili richiedono una stima di E_min molto più fine, che i modelli appresi ricavano dalla sequenza completa.
+- **B1b → GNN** (96,5% → 98,1%, metà degli errori): la struttura a grafo e i due rami separati aiutano, anche se un MLP con le stesse informazioni va già bene.
+- `mid` e `far` sono risolti da tutti i modelli tranne B0a: la difficoltà è tutta nei nativi e nei `near`.
+
+Sul validation la GNN arriva al 99,4% di accuratezza, ma quel numero è un po' ottimista: il validation set sceglie l'epoca migliore (early stopping). Il numero onesto è quello del test.
+
+### 7.2 Training
+
+La GNN si è fermata all'epoca 34, con i pesi migliori all'epoca 24 (AUROC di validation 0,9998). B1b si è fermata all'epoca 37 (migliore la 27).
+
+**Tempi e numeri denormali.** I primi run erano lentissimi: dopo una decina di epoche il tempo per epoca della GNN saliva di 10 volte (con 1000 sequenze da circa 11 a circa 117 secondi), anche con un solo training sulla macchina. La causa sono i numeri *denormali*, float più piccoli di circa 1e-38, che la CPU elabora molto più lentamente. Ora `run` chiama `torch.set_flush_denormal(True)`, che li tratta come 0. Con 1000 sequenze ogni epoca resta intorno agli 11 secondi e il training passa da 46 a 7 minuti, con risultati praticamente uguali (AUROC sul test 0,9990 invece di 0,9991). Con 1600 sequenze ci si aspetta circa 18 secondi per epoca, cioè una decina di minuti in tutto.
+
+I numeri di questa sezione vengono dai run fatti prima della correzione. Riallenando con il codice attuale possono cambiare alla terza cifra decimale, perché i valori denormali azzerati modificano di pochissimo i calcoli.
+
+Due training lanciati insieme si contendono i core e rallentano entrambi: conviene lanciarne uno alla volta, oppure limitare `threads`.
+
+### 7.3 Dove sbaglia la GNN
+
+- **Le energie le sa calcolare.** La testa dell'energia, arrotondata all'intero, coincide con l'energia vera nel 99,95% degli esempi di test (errore medio 0,13).
+- **Il limite è E_min.** La testa dell'energia minima ha un errore medio di 0,27: arrotondata, è giusta per 156 sequenze di test su 200.
+- **Gli errori sono pochi e concentrati.** Sono 117 su 6230: 95 nativi classificati come decoy e 22 decoy `near` classificati come nativi. Riguardano 23 sequenze su 200, e le 6 peggiori contano 82 errori.
+- **Il tipo di errore è sempre lo stesso.** Nelle sequenze peggiori la rete stima un'energia minima più bassa di quella vera (per esempio −5,4 invece di −5). Crede che si possa fare un contatto in più, e quindi scarta come decoy i nativi veri.
+
+È il collo di bottiglia previsto in §1. Per migliorare servono soprattutto più sequenze, o informazioni migliori sull'energia minima, più che una rete più grande. La learning curve (`train_sequences` = 100, 250, 500, 1000, 1600) dice se aggiungere sequenze serve ancora.
+
+### 7.4 Learning curve
+
+Stessa configurazione, ma usando solo una parte delle sequenze di train, scelte a caso (`train_sequences`). Validation e test restano sempre gli stessi (200 + 200 sequenze). Il punto da 1600 è il run completo di §7.1. Risultati sul test:
+
+```
+sequenze   GNN                                        B1b      B0b
+di train   accuratezza  AUROC   nativi  near   MAE E_min  accuratezza  accuratezza
+   100     0,910        0,9811  0,845   0,937  0,63       0,877        0,911
+   250     0,951        0,9925  0,940   0,907  0,43       0,927        0,910
+   500     0,943        0,9947  0,901   0,963  0,37       0,939        0,923
+  1000     0,989        0,9991  0,996   0,956  0,33       0,967        0,917
+  1600     0,981        0,9994  0,970   0,982  0,27       0,965        0,920
+```
+
+(B0a vale sempre 0,793: con una sola feature, l'energia intera, la soglia scelta non cambia con il numero di sequenze.)
+
+**Come leggerla.**
+
+- **L'AUROC della GNN cresce sempre, ma si sta saturando.** Passa da 0,981 a 0,999 tra 100 e 1000 sequenze; da 1000 a 1600 guadagna solo 0,0003.
+- **L'accuratezza oscilla** (per esempio 0,989 a 1000 e 0,981 a 1600). Dipende dalla soglia fissa a 0,5: a 1000 sequenze il modello è più "generoso" con i nativi (99,6% giusti, `near` 95,6%), a 1600 più severo (97,0% e 98,2%). Inoltre gli errori si concentrano in poche sequenze di test, quindi una sola sequenza sposta l'accuratezza di qualche decimo di punto. Per confrontare i punti della curva conviene guardare l'AUROC.
+- **L'errore su E_min scende ancora** (0,63 → 0,27) e non ha smesso di migliorare: è la parte del modello che beneficia di più sequenze, ed è il collo di bottiglia di §7.3.
+- **Le baseline si fermano prima.** B0b è ferma intorno al 91–92% già da 100 sequenze: il limite è il modello, non i dati. B1b cresce fino a 1000 sequenze (96–97%) e poi si ferma.
+- **Con poche sequenze la GNN vale quanto B0b** (91% con 100 sequenze, ma con un AUROC molto più alto). La differenza tra le due cresce con i dati.
+
+**Conclusione.** Con 1600 sequenze la GNN è vicina al limite di questo dataset per l'ordinamento (AUROC), ma la stima di E_min migliora ancora. Portare il dataset a circa 5000 sequenze (circa 75 minuti di generazione) dovrebbe ridurre gli errori residui sui nativi, con guadagni piccoli: pochi decimi di punto di accuratezza.
+
+**Attenzione: le sequenze di test sono vicine a quelle di train.** Ognuna differisce da una sequenza di train (o dalla sua inversa) per 1 o 2 residui (vedi la nota sul dataset). Il 98% vale quindi per sequenze "nuove ma simili": su sequenze lontane da quelle viste, per esempio più lunghe, il modello va rimisurato.
 
 ---
 
@@ -174,6 +240,20 @@ p = dm.score(model, ["HHPHHPHHPPHPPHHP"], coordinates)   # coordinates: (S, N, 2
 
 `score` restituisce la probabilità di nativo di ogni conformazione: è l'uso del modello come giudice, per esempio delle conformazioni proposte dalla policy. Le coordinate possono essere in qualsiasi posizione e orientamento.
 
+### 9.1 Uso da riga di comando
+
+```bash
+python -m hpfold --config config/default.toml discriminator_score
+```
+
+La fase carica il modello salvato da `discriminator_train` e apre una finestra che chiede se disegnare la conformazione da giudicare, come la fase `gui` per la configurazione iniziale del REMC:
+
+- **Yes**: si apre l'editor della fase 0 (catena di `discriminator_dataset.length` residui, poi i tipi H/P). Il pulsante **Evaluate** mostra il giudizio; la finestra resta aperta, così si possono provare più conformazioni una dopo l'altra.
+- **No**: si usa la conformazione del file `discriminator_model.input_conformation`, di default [config/discriminator_input.toml](../config/discriminator_input.toml), un file TOML a parte con `sequence` e `coordinates`.
+- **Cancel**: esce senza fare nulla.
+
+Il risultato compare in una finestra ed è stampato anche sul terminale: verdetto (nativo se `prob` ≥ 0,5), probabilità di nativo, logit, energia prevista accanto a quella esatta (meno i contatti H-H), energia minima prevista della sequenza e gap previsto. La conformazione è controllata prima di arrivare al modello: deve avere la lunghezza su cui il modello è stato allenato ed essere un self-avoiding walk.
+
 ---
 
 ## 10. Parametri (`[discriminator_model]`)
@@ -196,6 +276,7 @@ p = dm.score(model, ["HHPHHPHHPPHPPHHP"], coordinates)   # coordinates: (S, N, 2
 | `train_sequences` | 0                    | sequenze di train usate, scelte a caso (0 = tutte): per le learning curve |
 | `baselines`       | `["B0a", "B0b", "B1b"]` | baseline allenate accanto al modello (`[]` = nessuna)                 |
 | `threads`         | 0                    | thread CPU di torch (0 = default di torch)                               |
+| `input_conformation` | `config/discriminator_input.toml` | conformazione giudicata da `discriminator_score` se non la si disegna (§9.1) |
 
 ---
 
@@ -206,7 +287,9 @@ p = dm.score(model, ["HHPHHPHHPPHPPHHP"], coordinates)   # coordinates: (S, N, 2
 | [discriminator_model.py](../python/hpfold/discriminator_model.py)      | input, modello, baseline, training, metriche, file                            |
 | [discriminator_dataset.py](../python/hpfold/discriminator_dataset.py)  | `load_split`, `model_inputs`: lettura del dataset                            |
 | [policy_dataset.py](../python/hpfold/policy_dataset.py)                | `contact_map`                                                                |
+| [discriminator_score.py](../python/hpfold/discriminator_score.py)      | fase `discriminator_score`: file di input, controlli, finestra del giudizio (§9.1) |
 | [test_discriminator_model.py](../tests/test_discriminator_model.py)    | i test (§12)                                                                 |
+| [test_discriminator_score.py](../tests/test_discriminator_score.py)    | i test della fase `discriminator_score`                                      |
 
 Le funzioni principali di `discriminator_model.py`:
 

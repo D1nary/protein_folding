@@ -380,7 +380,7 @@ Siccome ogni sequenza ha tanti nativi quanti decoy, anche ogni insieme è bilanc
 | `meta.json`                        | Descrizione del dataset: versione del formato (2), lunghezza N, nomi degli split, delle fasce e delle sorgenti, input ammessi per il modello (`model_inputs`), significato delle lettere dei turni, convenzione delle coordinate, il riepilogo (`summary`), la configurazione usata, il commit git. |
 | `report.txt`                       | Il riepilogo stampato a fine esecuzione: esempi per classe e split, sequenze per split, sequenze scartate, fasce, trappole, istogramma dei gap, energie dei decoy.                                                                               |
 
-Il formato è CSV, leggibile anche con un foglio di calcolo o con pandas. Il dataset è piccolo (circa 62 600 esempi, 12,9 MB): non serve la compressione del policy dataset.
+Il formato è CSV, leggibile anche con un foglio di calcolo o con pandas. Il dataset è piccolo (circa 62 600 esempi, 14 MB): non serve la compressione del policy dataset.
 
 ### 9.2 Campi di un esempio
 
@@ -525,7 +525,7 @@ La REMC lanciata per ogni sequenza: stesse chiavi di `[remc]` (`n_replicas` = 5,
 | trappole cinetiche                | 10 810 (8 065 nella fascia `near`)                                     |
 | gap dei decoy                     | da 1 a 8; il 55% ha gap 1 o 2                                          |
 | `native_overlap` medio            | 0,60 `near`, 0,39 `mid`, 0,12 `far`                                    |
-| spazio su disco                   | circa 12,9 MB                                                          |
+| spazio su disco                   | circa 14 MB                                                          |
 | tempo di generazione              | circa 31 minuti (circa 0,9 s per sequenza)                             |
 
 ---

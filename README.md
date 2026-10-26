@@ -49,6 +49,7 @@ protein_folding/
 │   ├── policy_dataset.py     # fase 2
 │   ├── discriminator_dataset.py # fase 2b
 │   ├── discriminator_model.py   # fase 3b (torch)
+│   ├── discriminator_score.py   # fase 3b: giudizio di una conformazione da riga di comando
 │   └── ml.py                 # fase 3
 ├── tests/
 │   ├── test_smoke.py         # l'estensione si importa, la config si legge
@@ -58,7 +59,8 @@ protein_folding/
 │   ├── test_simulation.py    # fase 1: REMC, riproducibilità, output
 │   ├── test_policy_dataset.py # fase 2: azioni, simmetrie, oracolo, file
 │   ├── test_discriminator_dataset.py # fase 2b: etichette, bilanciamento, split
-│   └── test_discriminator_model.py   # fase 3b: input, simmetrie, metriche, training
+│   ├── test_discriminator_model.py   # fase 3b: input, simmetrie, metriche, training
+│   └── test_discriminator_score.py   # fase 3b: file di input, controlli, uscite
 ├── data/
 │   ├── input/                # configurazione iniziale disegnata con la GUI
 │   └── output/               # conformazione nativa, campioni (non versionato)
@@ -127,6 +129,7 @@ python -m hpfold --config config/default.toml verify    # verifica della fase 1 
 python -m hpfold --config config/default.toml policy_dataset         # fase 2
 python -m hpfold --config config/default.toml discriminator_dataset  # fase 2b
 python -m hpfold --config config/default.toml discriminator_train    # fase 3b
+python -m hpfold --config config/default.toml discriminator_score    # giudizio di una conformazione (GUI o config/discriminator_input.toml)
 python -m hpfold --config config/default.toml train     # fase 3
 ```
 

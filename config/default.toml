@@ -151,6 +151,9 @@ augment_reverse = true          # half of each batch read from the other end of 
 train_sequences = 0             # train sequences used, chosen at random (0 = all): learning curves
 baselines = ["B0a", "B0b", "B1b"]  # simple models trained and evaluated alongside ([] = none)
 threads = 0                     # CPU threads used by torch (0 = torch default)
+# Conformation judged by the phase `discriminator_score` when the user does not
+# draw one in the GUI: a separate TOML file with `sequence` and `coordinates`.
+input_conformation = "config/discriminator_input.toml"
 
 # [ml]
 # Model and training parameters: to be defined in phase 3.

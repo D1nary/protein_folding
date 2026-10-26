@@ -1,0 +1,17 @@
+# Conformation judged by the decoy discriminator (phase `discriminator_score`)
+# when the user chooses not to draw one in the GUI.
+#
+# The path of this file is discriminator_model.input_conformation in
+# config/default.toml. The chain must have as many residues as the sequences
+# the model was trained on (discriminator_dataset.length, 16 by default).
+
+# H = hydrophobic, P = polar, in chain order.
+sequence = "HHHPPPPHHHHPHHHH"
+
+# Lattice coordinates [x, y] of the residues, in chain order: consecutive
+# residues must be adjacent (up/down/left/right) and no cell can be used twice.
+# Position and orientation of the chain do not matter.
+coordinates = [
+    [6, 6], [7, 6], [8, 6], [8, 5], [9, 5], [9, 6], [9, 7], [8, 7],
+    [7, 7], [6, 7], [6, 8], [6, 9], [7, 9], [7, 8], [8, 8], [8, 9],
+]

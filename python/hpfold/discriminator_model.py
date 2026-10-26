@@ -499,6 +499,10 @@ def run(config: dict, verbose: bool = True) -> Path:
     """Trains the Discriminator and the baselines, evaluates them on val and
     test and writes the files in `output.discriminator_model_dir`."""
     cfg = config["discriminator_model"]
+    # After some epochs the GNN produces denormal floats (smaller than about
+    # 1e-38), which the CPU handles up to 10 times more slowly: they are
+    # treated as 0, which makes no difference to the results.
+    torch.set_flush_denormal(True)
     if cfg.get("threads", 0) > 0:
         torch.set_num_threads(cfg["threads"])
     directory = config["output"]["discriminator_dataset_dir"]
