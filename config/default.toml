@@ -63,6 +63,9 @@ policy_dataset_dir = "data/output/datasets/policy_dataset"
 discriminator_dataset_dir = "data/output/datasets/discriminator_dataset"
 # Trained decoy discriminator, metrics and predictions (phase `discriminator_train`).
 discriminator_model_dir = "data/output/models/discriminator"
+# Animated GIFs of the path to the native state (phase `discriminator_score`,
+# button Save GIF): folder proposed by the dialog.
+animation_dir = "data/output/animations"
 
 [policy_dataset]
 # Labelled dataset for the folding policy (phase 2): states of many sequences

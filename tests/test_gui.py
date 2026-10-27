@@ -97,3 +97,26 @@ def test_write_default_conformation_checks_the_length(tmp_path):
     with pytest.raises(ValueError):
         gui.write_default_conformation(config)
     assert not (tmp_path / "initial.json").exists()
+
+
+def test_save_folding_gif(tmp_path):
+    from PIL import Image
+
+    frames = [
+        [(0, 0), (1, 0), (2, 0), (3, 0)],
+        [(0, 0), (1, 0), (2, 0), (2, 1)],
+        [(0, 0), (1, 0), (1, 1), (2, 1)],
+    ]
+    path = tmp_path / "folding.gif"
+    gui.save_folding_gif(
+        path, "HPPH", frames, ["Start", "Move 1/2", "Move 2/2"],
+        {"H": "#E53935", "P": "#1E88E5"}, 16 / 60, move_ms=600, pause_ms=700,
+    )
+    with Image.open(path) as image:
+        assert image.size == (gui.GIF_SIDE, gui.GIF_SIDE + gui.GIF_CAPTION_HEIGHT)
+        # Every frame held, then the intermediate positions of each move.
+        assert image.n_frames == len(frames) + (len(frames) - 1) * (gui.GIF_TWEEN_FRAMES - 1)
+        assert image.info["loop"] == 0
+        assert image.info["duration"] == 700
+        image.seek(image.n_frames - 1)
+        assert image.info["duration"] == 700 * gui.GIF_END_PAUSES

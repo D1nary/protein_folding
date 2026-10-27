@@ -6,14 +6,19 @@ The drawn configuration is saved to the file given by
 This module contains only the window: the state of the chain, the validation
 of the moves and the JSON file are handled by ``hpfold.conformation``. It also
 holds the window that animates the path to the native state (phase
-``discriminator_score``, FoldingAnimation).
+``discriminator_score``, FoldingAnimation) and saves it as an animated GIF
+(save_folding_gif).
 """
 
+import functools
+import math
 import tkinter as tk
 from collections.abc import Callable
 from pathlib import Path
+from tkinter import filedialog, messagebox
 from tkinter import font as tkfont
-from tkinter import messagebox
+
+from PIL import Image, ImageDraw, ImageFont
 
 from hpfold import _core
 from hpfold.conformation import (
@@ -661,6 +666,165 @@ def interpolate(a: list[Coord], b: list[Coord], t: float) -> list[tuple[float, f
     return [(xa + (xb - xa) * t, ya + (yb - ya) * t) for (xa, ya), (xb, yb) in zip(a, b)]
 
 
+def lattice_bounds(frames: list[list[Coord]]) -> tuple[range, range]:
+    """Lattice shown: the box of all the frames, with one free node around."""
+    cells = [cell for frame in frames for cell in frame]
+    xs = range(min(x for x, _ in cells) - 1, max(x for x, _ in cells) + 2)
+    ys = range(min(y for _, y in cells) - 1, max(y for _, y in cells) + 2)
+    return xs, ys
+
+
+# Animated GIF of the path (save_folding_gif). Side in pixels of the grid,
+# with a strip under it for the caption of the frame.
+GIF_SIDE = 600
+GIF_CAPTION_HEIGHT = 40
+GIF_CAPTION_FONT_SIZE = 15  # pixels; smaller for a caption that does not fit
+# The frames are drawn this many times larger and then scaled down: Pillow
+# does not smooth the edges of what it draws.
+GIF_SCALE = 2
+# Intermediate positions drawn while the residues slide. Fewer than in the
+# window: every image of the GIF is kept in memory until the file is written.
+GIF_TWEEN_FRAMES = 12
+# The native state is held this many times animation_pause_ms before the GIF
+# starts again.
+GIF_END_PAUSES = 3
+
+
+@functools.lru_cache(maxsize=32)
+def gif_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
+    """Font of `size` pixels for the GIF: DejaVu Sans if installed, otherwise
+    the default font of Pillow."""
+    try:
+        return ImageFont.truetype("DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf", size)
+    except OSError:
+        return ImageFont.load_default(size)
+
+
+def dashed_line(
+    draw: ImageDraw.ImageDraw,
+    a: tuple[float, float],
+    b: tuple[float, float],
+    dash: tuple[float, float],
+    width: int,
+    fill: str,
+) -> None:
+    """Segment from a to b drawn as dashes of dash[0] pixels, dash[1] apart
+    (Pillow has no dashed lines)."""
+    (xa, ya), (xb, yb) = a, b
+    length = math.hypot(xb - xa, yb - ya)
+    on, off = dash
+    d = 0.0
+    while d < length:
+        e = min(d + on, length)
+        draw.line(
+            [(xa + (xb - xa) * d / length, ya + (yb - ya) * d / length),
+             (xa + (xb - xa) * e / length, ya + (yb - ya) * e / length)],
+            fill=fill, width=width,
+        )
+        d += on + off
+
+
+def save_folding_gif(
+    path: Path | str,
+    sequence: str,
+    frames: list[list[Coord]],
+    captions: list[str],
+    colors: dict[str, str],
+    radius_ratio: float,
+    move_ms: int,
+    pause_ms: int,
+) -> None:
+    """Writes the path to the native state to `path` as an animated GIF.
+
+    Same drawing and timing as FoldingAnimation: every frame is held for
+    `pause_ms` with its H-H contacts and its caption under the grid, then
+    the residues slide to the next one in `move_ms`. The GIF loops forever.
+    """
+    s = GIF_SCALE
+    width, side = GIF_SIDE * s, GIF_SIDE * s
+    caption_top = side
+    height = side + GIF_CAPTION_HEIGHT * s
+    xs, ys = lattice_bounds(frames)
+    cell_size, origin = fit_grid(side, side, len(xs), len(ys))
+    r = radius_ratio * cell_size
+    label_font = gif_font(max(1, round(r)), bold=True)
+    residue_colors = [colors[c] for c in sequence]
+
+    def to_pixel(cell: tuple[float, float]) -> tuple[float, float]:
+        x, y = cell
+        return cell_to_pixel((x - xs[0], y - ys[0]), cell_size, origin)
+
+    def caption_font(text: str, draw: ImageDraw.ImageDraw) -> ImageFont.FreeTypeFont:
+        size = GIF_CAPTION_FONT_SIZE * s
+        while size > 6 * s and draw.textlength(text, font=gif_font(size)) > width - 24 * s:
+            size -= s
+        return gif_font(size)
+
+    def render(k: int, target: int | None = None, t: float = 0.0) -> Image.Image:
+        image = Image.new("RGB", (width, height), THEME["grid"])
+        draw = ImageDraw.Draw(image)
+
+        # Lattice, as draw_lattice.
+        left, top = to_pixel((xs[0], ys[0]))
+        right, bottom = to_pixel((xs[-1], ys[-1]))
+        for x in xs:
+            px, _ = to_pixel((x, ys[0]))
+            draw.line([(px, top), (px, bottom)], fill=THEME["lattice"], width=s)
+        for y in ys:
+            _, py = to_pixel((xs[0], y))
+            draw.line([(left, py), (right, py)], fill=THEME["lattice"], width=s)
+        for x in xs:
+            for y in ys:
+                px, py = to_pixel((x, y))
+                draw.ellipse([px - 2 * s, py - 2 * s, px + 2 * s, py + 2 * s],
+                             fill=THEME["lattice"])
+
+        frame = frames[k]
+        if target is not None:
+            positions = interpolate(frame, frames[target], t)
+        else:
+            positions = frame
+            # The contacts are drawn only when the chain is on the lattice.
+            for i, j in hh_contacts(sequence, frame):
+                dashed_line(draw, to_pixel(frame[i]), to_pixel(frame[j]), (4 * s, 4 * s),
+                            max(1, round(r / 6)), THEME["bond"])
+
+        # Chain, as draw_chain.
+        points = [to_pixel(cell) for cell in positions]
+        if len(points) > 1:
+            draw.line(points, fill=THEME["bond"], width=max(1, round(r / 4)), joint="curve")
+        for index, ((px, py), color) in enumerate(zip(points, residue_colors)):
+            draw.ellipse([px - r, py - r, px + r, py + r], fill=color,
+                         outline=THEME["residue_outline"], width=s)
+            draw.text((px, py), str(index), fill=THEME["residue_label"], font=label_font,
+                      anchor="mm")
+
+        # Caption of the frame (the one of the frame left while sliding, as
+        # the status bar of the window).
+        draw.rectangle([0, caption_top, width, height], fill=THEME["surface"])
+        draw.line([(0, caption_top), (width, caption_top)], fill=THEME["border"], width=s)
+        caption = captions[k]
+        draw.text((12 * s, (caption_top + height) / 2), caption, fill=THEME["text"],
+                  font=caption_font(caption, draw), anchor="lm")
+
+        image = image.resize((width // s, height // s), Image.Resampling.LANCZOS)
+        # Palette image right away: much less memory than RGB.
+        return image.convert("P", palette=Image.Palette.ADAPTIVE)
+
+    images, durations = [], []
+    for k in range(len(frames)):
+        last = k == len(frames) - 1
+        images.append(render(k))
+        durations.append(pause_ms * (GIF_END_PAUSES if last else 1))
+        if not last:
+            for i in range(1, GIF_TWEEN_FRAMES):
+                images.append(render(k, k + 1, i / GIF_TWEEN_FRAMES))
+                durations.append(max(10, move_ms // GIF_TWEEN_FRAMES))
+    images[0].save(
+        path, format="GIF", save_all=True, append_images=images[1:], duration=durations, loop=0
+    )
+
+
 class FoldingAnimation:
     """Window that shows, move after move, the path from a conformation to the
     native state (phase ``discriminator_score``).
@@ -676,7 +840,9 @@ class FoldingAnimation:
 
     The Pause/Play button stops the animation and resumes it from where it
     stopped. While it is stopped, the previous and next move buttons slide the
-    chain one move backwards or forwards.
+    chain one move backwards or forwards. Once the path is known, Save GIF
+    writes the whole animation to a file (by default in
+    ``output.animation_dir``).
     """
 
     # Intermediate positions drawn while the residues slide.
@@ -703,11 +869,14 @@ class FoldingAnimation:
         self.colors = {"H": gui["color_h"], "P": gui["color_p"]}
         self.move_ms = gui["animation_move_ms"]
         self.pause_ms = gui["animation_pause_ms"]
+        self.animation_dir = Path(config["output"]["animation_dir"])
         self.on_close = on_close
 
         self.sequence = sequence
         self.frames = [list(coordinates)]
         self.captions = ["Start"]
+        # The path given to play(), None while it is computed.
+        self.path = None
         # Frame shown, or left by the slide in progress; frame the slide goes
         # to (None when the chain is still) and fraction of the way done.
         self.frame = 0
@@ -766,6 +935,12 @@ class FoldingAnimation:
         self.next_button = FlatButton(box, text="Next move →", command=lambda: self._go(1))
         self.next_button.pack(fill="x")
         self.control_boxes["step"] = box
+
+        box = card(panel, "Export")
+        box.pack(fill="x", pady=(0, 10))
+        hint(box, "The whole path as an animated GIF.").pack(anchor="w", pady=(0, 8))
+        self.gif_button = FlatButton(box, text="Save GIF…", command=self._save_gif)
+        self.gif_button.pack(fill="x")
         self.window.bind("<space>", lambda event: self._toggle())
         self.window.bind("<Left>", lambda event: self._go(-1))
         self.window.bind("<Right>", lambda event: self._go(1))
@@ -811,6 +986,7 @@ class FoldingAnimation:
 
     def play(self, path) -> None:
         """Takes the frames of the path and starts the animation."""
+        self.path = path
         self.frames = path.frames
         self.captions = [f"Start: energy {path.start_energy}, {len(path.steps)} moves to go"]
         for i, step in enumerate(path.steps, start=1):
@@ -894,6 +1070,38 @@ class FoldingAnimation:
         if self.playing:
             self._job = self.window.after(self.pause_ms, self._next_move)
 
+    def _save_gif(self) -> None:
+        """Asks for a file and saves the whole path to it as an animated GIF."""
+        if self.path is None:
+            return
+        self.animation_dir.mkdir(parents=True, exist_ok=True)
+        file = filedialog.asksaveasfilename(
+            parent=self.window,
+            title="Save the animation as GIF",
+            initialdir=self.animation_dir,
+            initialfile=f"folding_{self.sequence}.gif",
+            defaultextension=".gif",
+            filetypes=[("GIF", "*.gif")],
+        )
+        if not file:
+            return
+        # The GIF takes a few seconds and blocks the window.
+        self.window.config(cursor="watch")
+        self.status.set("Saving the GIF...")
+        self.window.update()
+        try:
+            save_folding_gif(
+                file, self.sequence, self.frames, self.captions, self.colors,
+                self.radius_ratio, self.move_ms, self.pause_ms,
+            )
+        except OSError as error:
+            messagebox.showerror("Save error", str(error), parent=self.window)
+        else:
+            messagebox.showinfo("GIF", f"Animation saved to {file}.", parent=self.window)
+        finally:
+            self.window.config(cursor="")
+            self.status.set(self.captions[self.frame])
+
     def _cancel(self) -> None:
         if self._job is not None:
             self.window.after_cancel(self._job)
@@ -919,6 +1127,7 @@ class FoldingAnimation:
         self.back_button.set_enabled(still and self.frame > 0)
         self.next_button.set_enabled(still and self.frame < len(self.frames) - 1)
         self.restart_button.set_enabled(has_moves)
+        self.gif_button.set_enabled(self.path is not None)
         # Blue border: playback while it plays, step by step while paused.
         active = None if not has_moves else "playback" if self.playing else "step"
         for name, box in self.control_boxes.items():
@@ -929,10 +1138,7 @@ class FoldingAnimation:
     # Drawing
 
     def _set_bounds(self) -> None:
-        """Lattice shown: the box of all the frames, with one free node around."""
-        cells = [cell for frame in self.frames for cell in frame]
-        self.xs = range(min(x for x, _ in cells) - 1, max(x for x, _ in cells) + 2)
-        self.ys = range(min(y for _, y in cells) - 1, max(y for _, y in cells) + 2)
+        self.xs, self.ys = lattice_bounds(self.frames)
 
     def _fit(self, width: int, height: int) -> None:
         self.cell_size, self.origin = fit_grid(width, height, len(self.xs), len(self.ys))

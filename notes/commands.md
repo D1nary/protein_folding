@@ -188,8 +188,8 @@ dice e non ci sono mosse da mostrare.
 | | |
 |---|---|
 | Input | `data/output/models/discriminator/discriminator.pt` (quindi va eseguito prima `discriminator_train`) e, con **No**, `config/discriminator_input.toml` |
-| Parametri | `[gui]` (colori, `animation_move_ms`, `animation_pause_ms`), `policy_dataset.exact_max_length` |
-| Output | nessun file: solo le finestre e il terminale |
+| Parametri | `[gui]` (colori, `animation_move_ms`, `animation_pause_ms`), `policy_dataset.exact_max_length`, `output.animation_dir` |
+| Output | solo le finestre e il terminale; con **Save GIF…** la GIF dell'animazione (di default in `data/output/animations/`) |
 
 Il significato delle uscite e l'uso da Python sono in
 [discriminator_model.md](discriminator_model.md) (§9).
