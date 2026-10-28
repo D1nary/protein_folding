@@ -14,3 +14,6 @@ __pycache__/
 data/output/*
 !data/output/.gitkeep
 .claude/
+
+# Personal notes
+STRUTTURA.md

@@ -30,4 +30,4 @@ Non si compila a mano: [`CMakeLists.txt`](../CMakeLists.txt) costruisce la libre
 pip install -e ".[dev,ml]"
 ```
 
-Da Python si usa come `from hpfold import _core` (per esempio `_core.run_remc` in `python/hpfold/simulation.py`). Schede dettagliate di ogni header in [`notes/file_functioning/cpp/include/hp/`](../notes/file_functioning/cpp/include/hp/).
+Da Python si usa come `from hpfold import _core` (per esempio `_core.run_remc` in `python/hpfold/simulation.py`).

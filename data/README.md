@@ -8,7 +8,7 @@ Dati letti e prodotti dalla pipeline. I percorsi effettivi sono quelli di `[prot
 |---|---|---|
 | `initial_conformation.json` | fase `gui` | fase `simulate` |
 
-Formato descritto in [`notes/code_info/initial_conformation.md`](../notes/code_info/initial_conformation.md).
+È un oggetto JSON con due chiavi: `sequence`, stringa di `H` e `P`, e `coordinates`, lista di coppie `[x, y]` in ordine di catena (la coppia `i` è la posizione del residuo `i`).
 
 ## `output/` (non versionata, rigenerabile)
 
@@ -20,6 +20,6 @@ Formato descritto in [`notes/code_info/initial_conformation.md`](../notes/code_i
 | `native_conformation.json` | `simulate` | conformazione a energia minima, con la chiave `energy` |
 | `datasets/policy_dataset/` | `policy_dataset` | `meta.json`, `sequences.npz`, un `.npz` per split, `trajectories.csv` |
 
-Campi come `energy`, `e_min`, `gap` e `tier` contengono la risposta e **non** vanno usati come feature: l'input del modello è solo sequenza e conformazione. Formato completo in [`notes/discriminator_dataset.md`](../notes/discriminator_dataset.md) (§9).
+Campi come `energy`, `e_min`, `gap` e `tier` contengono la risposta e **non** vanno usati come feature: l'input del modello è solo sequenza e conformazione.
 
 I file `.gitkeep` sono vuoti: servono a far conservare le cartelle a git.

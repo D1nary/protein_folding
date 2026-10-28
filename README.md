@@ -12,6 +12,7 @@ Il dataset di addestramento è generato dal progetto stesso: per migliaia di seq
 Il modello principale è una **GNN** sul grafo dei contatti della conformazione affiancata da una **CNN 1D** sulla sequenza, confrontata con tre baseline più semplici.
 
 Il calcolo pesante (simulazione, enumerazione esatta, grafo delle mosse) è in C++17 ed è esposto a Python con pybind11; la pipeline, il dataset, il modello (PyTorch) e la GUI (Tkinter) sono in Python.
+
 <p align="center">
   <img src="docs/folding_PHHPPHPPHHPPHHPP.gif" alt="Percorso della sequenza PHHPPHPPHHPPHHPP verso lo stato nativo" width="400">
 </p>
@@ -33,21 +34,26 @@ Il calcolo pesante (simulazione, enumerazione esatta, grafo delle mosse) è in C
 
 ## Come funziona
 
-```
-sequenze HP casuali ──► REMC per ogni sequenza ──► nativi + decoy (1:1) ──► train / val / test
-   (discriminator_dataset)        (C++)              fasce near/mid/far,       (split per sequenza)
-                                                     trappole cinetiche
-                                                              
-                                                              │
-                                                              ▼
-              
-              conformazione ──► GNN (contatti) + CNN 1D (sequenza) ──► P(nativa), E, E_min, gap
-              (disegnata o da file)        (discriminator_train)          (discriminator_score)
-```
+Il progetto è diviso in tre fasi:
 
 1. **Dataset** (`discriminator_dataset`): genera `n_sequences` sequenze casuali di `length` residui; per ciascuna esegue una REMC e prende come **nativi** tutti gli stati degeneri all'energia minima trovata (verificata per enumerazione esatta fino a 20 residui) e come **decoy** stati a energia più alta, divisi in fasce `near` / `mid` / `far` in base al gap da `E_min`, più le trappole cinetiche.
 2. **Training** (`discriminator_train`): allena il modello principale e le baseline `B0a`, `B0b`, `B1b` con early stopping sull'AUROC di validation, e li valuta su val e test.
 3. **Score** (`discriminator_score`): giudica una conformazione disegnata nella GUI o letta da file, poi anima il percorso più breve verso lo stato nativo più vicino (calcolato con l'oracolo esatto, non dal modello).
+
+```
+[1] Dataset — discriminator_dataset
+    sequenze HP casuali ──► REMC (C++) per ogni sequenza ──► nativi + decoy (1:1) ──► train / val / test
+                                                             fasce near/mid/far,      split per sequenza
+                                                             trappole cinetiche
+                                          │
+                                          ▼
+[2] Training — discriminator_train
+    train / val / test ──► GNN (contatti) + CNN 1D (sequenza) ──► modello allenato (discriminator.pt)
+                                          │
+                                          ▼
+[3] Score — discriminator_score
+    conformazione (disegnata o da file) ──► modello ──► P(nativa), E, E_min, gap
+```
 
 ## Struttura del repository
 
@@ -55,7 +61,6 @@ sequenze HP casuali ──► REMC per ogni sequenza ──► nativi + decoy (1
 protein_folding/
 ├── CMakeLists.txt          # build del core C++ (hp_core) e del modulo Python hpfold._core
 ├── pyproject.toml          # pacchetto hpfold: dipendenze e backend scikit-build-core
-├── STRUTTURA.md            # descrizione dettagliata di ogni cartella e file
 ├── .clangd                 # configurazione di clangd (solo per l'editor)
 ├── config/                 # parametri di tutte le fasi (TOML)       → config/README.md
 ├── cpp/                    # core C++: modello HP, mosse, REMC, oracolo → cpp/README.md
@@ -67,8 +72,7 @@ protein_folding/
 ├── data/                   # input della pipeline e output rigenerabili → data/README.md
 │   ├── input/              #   conformazione iniziale disegnata con la GUI
 │   └── output/             #   dataset, modelli, animazioni (non versionato)
-├── docs/                   # immagini usate nel README
-└── notes/                  # documentazione di progetto in italiano  → notes/README.md
+└── docs/                   # immagini usate nel README
 ```
 
 ## Requisiti e dipendenze
@@ -89,21 +93,29 @@ protein_folding/
 
 Dalla radice del progetto:
 
-```bash
-sudo apt install build-essential cmake python3-dev python3-venv python3-tk
-```
+- Installa (una sola volta) il compilatore C++, CMake, gli header di Python, il modulo `venv` e Tkinter per le finestre grafiche.
 
-```bash
-python3 -m venv .venv
-```
+  ```bash
+  sudo apt install build-essential cmake python3-dev python3-venv python3-tk
+  ```
 
-```bash
-source .venv/bin/activate
-```
+- Crea nella cartella `.venv/` un ambiente virtuale, cioè un Python separato da quello di sistema in cui installare le librerie del progetto.
 
-```bash
-pip install -e ".[dev,ml]"
-```
+  ```bash
+  python3 -m venv .venv
+  ```
+
+- Attiva l'ambiente virtuale, così `python` e `pip` sono quelli di `.venv/` (va ripetuto in ogni nuovo terminale).
+
+  ```bash
+  source .venv/bin/activate
+  ```
+
+- Compila il codice C++ e installa il pacchetto `hpfold` con le sue dipendenze, più i gruppi opzionali `dev` (pytest) e `ml` (PyTorch).
+
+  ```bash
+  pip install -e ".[dev,ml]"
+  ```
 
 `pip install -e` compila il C++ con CMake (tramite scikit-build-core), produce il modulo `hpfold._core` e installa il pacchetto in modalità modificabile. I file intermedi finiscono in `build/`. Dopo una modifica al C++ il comando va rieseguito; le modifiche ai file Python sono subito attive.
 
@@ -180,7 +192,7 @@ Moves to the nearest native state: 4
 Native state: [[6, 8], [7, 8], [8, 8], [8, 7], [9, 7], [9, 8], [10, 8], [10, 9], ...]
 ```
 
-Comandi della finestra: **Pause/Play** (spazio), **Previous move** / **Next move** (← / →), **Restart**, **Save GIF…**. Il significato delle singole uscite è spiegato in [notes/output_parameters.md](notes/output_parameters.md).
+Comandi della finestra: **Pause/Play** (spazio), **Previous move** / **Next move** (← / →), **Restart**, **Save GIF…**. Le uscite sono: la probabilità che la conformazione sia nativa e il relativo logit, l'energia prevista accanto a quella esatta (meno il numero di contatti H-H), l'energia minima prevista della sequenza e il gap previsto tra le due.
 
 ### Uso da Python
 
@@ -208,7 +220,7 @@ Tutti i parametri stanno in [config/default.toml](config/default.toml); per un e
 | `[lattice]`, `[protein]`, `[gui]`  | reticolo, proteina di default, aspetto e tempi dell'animazione                                                                | 20×20, 16 residui                                             |
 | `[output]`                         | percorsi di tutti gli output                                                                                                  | `data/output/...`                                             |
 
-Le baseline: **B0a** regressione logistica sulla sola energia; **B0b** regressione logistica su energia e feature della sequenza; **B1b** MLP su vettore HP e contatti H-H. Descrizione completa in [notes/discriminator_model.md](notes/discriminator_model.md).
+Le baseline: **B0a** regressione logistica sulla sola energia; **B0b** regressione logistica su energia e feature della sequenza; **B1b** MLP su vettore HP e contatti H-H.
 
 ## Risultati
 
@@ -223,7 +235,7 @@ Run locale con la configurazione di default (dataset di 62 640 esempi, test su 2
 
 Le colonne da "nativi" a "trappole" sono l'accuratezza dentro ciascun gruppo.
 
-## Roadmap e limitazioni note
+## Limitazioni note
 
 - Una sola lunghezza di catena per dataset: il discriminator accetta solo catene di `discriminator_dataset.length` residui (16 di default).
 
