@@ -1,7 +1,7 @@
 #pragma once
 
 // Recording of the configurations visited by the REMC, for the dataset
-// (phase 2). See notes/dataset.md.
+// (phase 2). See notes/policy_dataset.md.
 //
 // The data stays in memory: Python reads it through the wrapper and writes
 // the files, so the C++ code reads and writes no file.

@@ -73,6 +73,8 @@ CARD_TITLE_FONT = ("TkDefaultFont", FONT_SIZE + 1, "bold")
 # labels of KeyValueList: longer ones go on more lines.
 PANEL_TEXT_WIDTH = 270
 LABEL_WIDTH = 170
+# Names of the residue types in the buttons of step 2 and in the legend.
+RESIDUE_NAMES = {"H": "H — hydrophobic", "P": "P — polar"}
 
 
 def apply_theme(root: tk.Tk) -> None:
@@ -199,16 +201,50 @@ def hint(master: tk.Misc, text: str) -> tk.Label:
     )
 
 
-def prediction_box(master: tk.Misc) -> KeyValueList:
-    """Box "Model prediction" at the bottom of `master`.
+def pack_box(box: tk.Frame, side: str) -> None:
+    """Packs a box at the bottom of its panel ("bottom"), above the boxes
+    already packed there, or under the ones at the top ("top")."""
+    box.pack(side=side, fill="x", pady=(12, 0) if side == "bottom" else (0, 10))
+
+
+def prediction_box(master: tk.Misc, side: str = "bottom") -> KeyValueList:
+    """Box "Model prediction" in `master`, packed as pack_box.
 
     Returns the list inside it, which receives the text of the outputs.
     """
     box = card(master, "Model prediction")
-    box.pack(side="bottom", fill="x", pady=(12, 0))
+    pack_box(box, side)
     values = KeyValueList(box, background=THEME["surface"])
     values.pack(fill="x")
     return values
+
+
+def swatch(master: tk.Misc, color: str) -> tk.Canvas:
+    """Small circle of the colour of a residue, on the background of a box."""
+    canvas = tk.Canvas(
+        master, width=16, height=16, highlightthickness=0, background=THEME["surface"]
+    )
+    canvas.create_oval(2, 2, 14, 14, fill=color, outline=THEME["surface"])
+    return canvas
+
+
+def legend_box(master: tk.Misc, colors: dict[str, str], side: str = "bottom") -> tk.Frame:
+    """Box "Legend" with the colour of each residue type, packed as pack_box.
+
+    At the bottom it takes the free space under the controls. The types are
+    on one line, to take as little height as possible.
+    """
+    box = card(master, "Legend")
+    pack_box(box, side)
+    row = tk.Frame(box, background=THEME["surface"])
+    row.pack(anchor="w")
+    for k, residue_type in enumerate(RESIDUE_TYPES):
+        swatch(row, colors[residue_type]).pack(side="left", padx=(0 if k == 0 else 16, 0))
+        tk.Label(
+            row, text=RESIDUE_NAMES[residue_type], background=THEME["surface"],
+            foreground=THEME["value_label"],
+        ).pack(side="left", padx=(6, 0))
+    return box
 
 
 def status_bar(master: tk.Misc, textvariable: tk.StringVar) -> tk.Label:
@@ -287,7 +323,7 @@ class ConformationEditor:
     coordinates)`` instead and the window stays open, so that more
     conformations can be drawn one after the other (phase
     ``discriminator_score``); `length` then replaces ``protein.length``, and
-    a box at the bottom right shows the text given to show_result().
+    a box in a column on the right shows the text given to show_result().
     """
 
     def __init__(
@@ -377,7 +413,7 @@ class ConformationEditor:
         self.to_step2_button.pack(fill="x")
         self.step_boxes = {1: box}
 
-        # Step 2 controls; the selector doubles as the colour legend.
+        # Step 2 controls.
         box = card(panel, "Step 2 · Type of the residues")
         box.pack(fill="x", pady=(0, 10))
         hint(box, "Click on a residue to give it the selected type (H/P keys to switch).").pack(
@@ -405,11 +441,7 @@ class ConformationEditor:
         self.active_type.trace_add("write", lambda *args: self._update_type_buttons())
         row = tk.Frame(box, background=t["surface"])
         row.pack(anchor="w", pady=(2, 0))
-        swatch = tk.Canvas(
-            row, width=16, height=16, highlightthickness=0, background=t["surface"]
-        )
-        swatch.create_oval(2, 2, 14, 14, fill=self.color_untyped, outline=t["surface"])
-        swatch.pack(side="left")
+        swatch(row, self.color_untyped).pack(side="left")
         tk.Label(
             row, text="type not assigned", background=t["surface"], foreground=t["text_muted"]
         ).pack(side="left", padx=(4, 0))
@@ -425,13 +457,19 @@ class ConformationEditor:
         )
         self.save_button.pack(fill="x", ipady=3)
 
-        # Result of on_done, at the bottom of the panel.
+        # Result of on_done in a second column, with the legend: under the
+        # controls they would not fit in the height of a 1080p screen.
         self.result: KeyValueList | None = None
-        if self.on_done is not None:
-            self.result = prediction_box(panel)
+        if self.on_done is None:
+            legend_box(panel, self.colors)
+        else:
+            column = tk.Frame(self.root)
+            column.grid(row=0, column=2, sticky="ns", padx=(0, 8), pady=8)
+            legend_box(column, self.colors, side="top")
+            self.result = prediction_box(column, side="top")
             self.result_shown = False
 
-        status_bar(self.root, self.status).grid(row=1, column=0, columnspan=2, sticky="ew")
+        status_bar(self.root, self.status).grid(row=1, column=0, columnspan=3, sticky="ew")
 
     # ------------------------------------------------------------------
     # Event handlers
@@ -499,7 +537,7 @@ class ConformationEditor:
         self._refresh()
 
     def show_result(self, text: str) -> None:
-        """Shows the result of on_done in the box at the bottom right."""
+        """Shows the result of on_done in the box on the right."""
         if self.result is not None:
             self.result.set_text(text)
             self.result_shown = True
@@ -559,25 +597,24 @@ class ConformationEditor:
         """The active type is filled with its colour and has a check mark;
         the other one has its colour on white. Grey during step 1."""
         t = THEME
-        names = {"H": "H — hydrophobic", "P": "P — polar"}
         for residue_type, button in self.type_buttons.items():
             color = self.colors[residue_type]
             if self.step == 1:
                 button.config(
-                    state="disabled", text=names[residue_type], cursor="",
+                    state="disabled", text=RESIDUE_NAMES[residue_type], cursor="",
                     background=t["button_disabled"], highlightbackground=t["button_disabled"],
                     highlightcolor=t["button_disabled"],
                 )
             elif residue_type == self.active_type.get():
                 button.config(
-                    state="normal", text=f"✓  {names[residue_type]}", cursor="hand2",
+                    state="normal", text=f"✓  {RESIDUE_NAMES[residue_type]}", cursor="hand2",
                     background=color, foreground=t["residue_label"],
                     activebackground=color, activeforeground=t["residue_label"],
                     highlightbackground=color, highlightcolor=color,
                 )
             else:
                 button.config(
-                    state="normal", text=names[residue_type], cursor="hand2",
+                    state="normal", text=RESIDUE_NAMES[residue_type], cursor="hand2",
                     background=t["surface"], foreground=color,
                     activebackground=t["button_disabled"], activeforeground=color,
                     highlightbackground=t["border"], highlightcolor=t["border"],
@@ -675,8 +712,10 @@ def lattice_bounds(frames: list[list[Coord]]) -> tuple[range, range]:
 
 
 # Animated GIF of the path (save_folding_gif). Side in pixels of the grid,
-# with a strip under it for the caption of the frame.
+# with a strip over it for the legend and one under it for the caption of
+# the frame.
 GIF_SIDE = 600
+GIF_LEGEND_HEIGHT = 36
 GIF_CAPTION_HEIGHT = 40
 GIF_CAPTION_FONT_SIZE = 15  # pixels; smaller for a caption that does not fit
 # The frames are drawn this many times larger and then scaled down: Pillow
@@ -738,14 +777,17 @@ def save_folding_gif(
 
     Same drawing and timing as FoldingAnimation: every frame is held for
     `pause_ms` with its H-H contacts and its caption under the grid, then
-    the residues slide to the next one in `move_ms`. The GIF loops forever.
+    the residues slide to the next one in `move_ms`. Over the grid, the
+    legend of the colours as in the box of the window. The GIF loops forever.
     """
     s = GIF_SCALE
     width, side = GIF_SIDE * s, GIF_SIDE * s
-    caption_top = side
-    height = side + GIF_CAPTION_HEIGHT * s
+    legend_bottom = GIF_LEGEND_HEIGHT * s
+    caption_top = legend_bottom + side
+    height = caption_top + GIF_CAPTION_HEIGHT * s
     xs, ys = lattice_bounds(frames)
-    cell_size, origin = fit_grid(side, side, len(xs), len(ys))
+    cell_size, (ox, oy) = fit_grid(side, side, len(xs), len(ys))
+    origin = (ox, oy + legend_bottom)
     r = radius_ratio * cell_size
     label_font = gif_font(max(1, round(r)), bold=True)
     residue_colors = [colors[c] for c in sequence]
@@ -760,9 +802,25 @@ def save_folding_gif(
             size -= s
         return gif_font(size)
 
+    def draw_legend(draw: ImageDraw.ImageDraw) -> None:
+        """Strip at the top: a circle and the name of each type, as
+        legend_box."""
+        draw.rectangle([0, 0, width, legend_bottom], fill=THEME["surface"])
+        draw.line([(0, legend_bottom), (width, legend_bottom)], fill=THEME["border"], width=s)
+        y = legend_bottom / 2
+        x = 12 * s
+        font = gif_font(GIF_CAPTION_FONT_SIZE * s)
+        for residue_type in RESIDUE_TYPES:
+            draw.ellipse([x, y - 6 * s, x + 12 * s, y + 6 * s], fill=colors[residue_type])
+            x += 18 * s
+            name = RESIDUE_NAMES[residue_type]
+            draw.text((x, y), name, fill=THEME["value_label"], font=font, anchor="lm")
+            x += draw.textlength(name, font=font) + 20 * s
+
     def render(k: int, target: int | None = None, t: float = 0.0) -> Image.Image:
         image = Image.new("RGB", (width, height), THEME["grid"])
         draw = ImageDraw.Draw(image)
+        draw_legend(draw)
 
         # Lattice, as draw_lattice.
         left, top = to_pixel((xs[0], ys[0]))
@@ -907,6 +965,7 @@ class FoldingAnimation:
         panel.grid(row=0, column=1, sticky="ns", padx=8, pady=8)
         if self.prediction is not None:
             prediction_box(panel).set_text(self.prediction)
+        legend_box(panel, self.colors)
 
         # Same boxes as the panel of ConformationEditor; the box of the
         # controls that can be used now has a blue border (see _update_buttons).

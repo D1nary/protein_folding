@@ -1,7 +1,7 @@
 #pragma once
 
 // Canonical form of a conformation, used by the dataset (phase 2).
-// See notes/dataset.md.
+// See notes/policy_dataset.md.
 //
 // A chain is described by its turns, which do not change when the chain is
 // translated or rotated on the lattice. Of the two mirror images, the

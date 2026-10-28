@@ -43,7 +43,6 @@ t_max = 0.220        # T_M: temperature of the hottest replica
 local_steps = 500   # phi: local Monte Carlo steps between two swap attempts
 n_cycles = 10000     # number of cycles (local sampling + swap)
 rho = 0.4           # probability that a local step uses a pull move (otherwise VSHD)
-save_every = 10     # how many cycles between saves of the intermediate configurations
 seed = 42           # seed of the random number generator
 
 [exact]
@@ -56,7 +55,6 @@ max_length = 25     # longest chain verified by exact enumeration
 [output]
 # Lowest-energy conformation found by the REMC (phase 1).
 native_conformation = "data/output/native_conformation.json"
-samples_dir = "data/output/samples"   # intermediate configurations written by the C++ code
 # Labelled dataset for the folding policy (phase `policy_dataset`).
 policy_dataset_dir = "data/output/datasets/policy_dataset"
 # Natives and decoys for the decoy discriminator (phase `discriminator_dataset`).
@@ -70,7 +68,7 @@ animation_dir = "data/output/animations"
 [policy_dataset]
 # Labelled dataset for the folding policy (phase 2): states of many sequences
 # of length protein.length, each with the feasible actions and their distance
-# from the native state. See notes/dataset.md.
+# from the native state. See notes/policy_dataset.md.
 n_sequences = 100               # sequences in the dataset (lowest energy < 0)
 h_fraction = 0.5                # probability that a residue of a random sequence is H
 include_config_sequence = true  # protein.sequence is the first sequence

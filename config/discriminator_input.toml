@@ -6,7 +6,7 @@
 # the model was trained on (discriminator_dataset.length, 16 by default).
 
 # H = hydrophobic, P = polar, in chain order.
-sequence = "HHHPPPPHHHHPHHHH"
+sequence = "PHHPPHPPHHPPHHPP"
 
 # Lattice coordinates [x, y] of the residues, in chain order: consecutive
 # residues must be adjacent (up/down/left/right) and no cell can be used twice.

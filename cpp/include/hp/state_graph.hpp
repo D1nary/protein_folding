@@ -3,7 +3,7 @@
 // Graph of the conformations connected by one action, and the oracle that
 // labels the dataset (phase 2): distance of every state from the native
 // state, optimal actions, paths to the native state and cleaning of the REMC
-// trajectories. See notes/dataset.md.
+// trajectories. See notes/policy_dataset.md.
 //
 // States are canonical conformations (canonical.hpp), identified by their
 // key; actions are the slots of actions.hpp, in the frame of the canonical

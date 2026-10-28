@@ -113,7 +113,9 @@ def test_save_folding_gif(tmp_path):
         {"H": "#E53935", "P": "#1E88E5"}, 16 / 60, move_ms=600, pause_ms=700,
     )
     with Image.open(path) as image:
-        assert image.size == (gui.GIF_SIDE, gui.GIF_SIDE + gui.GIF_CAPTION_HEIGHT)
+        assert image.size == (
+            gui.GIF_SIDE, gui.GIF_LEGEND_HEIGHT + gui.GIF_SIDE + gui.GIF_CAPTION_HEIGHT
+        )
         # Every frame held, then the intermediate positions of each move.
         assert image.n_frames == len(frames) + (len(frames) - 1) * (gui.GIF_TWEEN_FRAMES - 1)
         assert image.info["loop"] == 0

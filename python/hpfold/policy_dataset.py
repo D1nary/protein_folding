@@ -5,7 +5,7 @@ learns from: which actions are feasible, how many moves every action leaves to
 the native state, and the energy change of every action. The labels come from
 an oracle (breadth-first search on the graph of the moves), never from the
 moves made by the REMC: the REMC only provides the states. See
-notes/dataset.md for the format and the reasons behind it.
+notes/policy_dataset.md for the format and the reasons behind it.
 
 The heavy parts (action space, canonical keys, graph, oracle, cleaning of the
 trajectories) are in the C++ core; this module chooses the states, splits the

@@ -2,7 +2,7 @@
 
 // Discrete action space of fixed size for the dataset (phase 2): every move
 // returned by vshd_moves() or pull_moves() gets a slot, identified by a
-// residue and a move type. See notes/dataset.md.
+// residue and a move type. See notes/policy_dataset.md.
 //
 // The move types are defined in the frame of the chain, never with absolute
 // directions: L and R are turns of 90 degrees with respect to a bond (as in
