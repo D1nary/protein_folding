@@ -1,23 +1,23 @@
 # `tests/`
 
-Test automatici del progetto, eseguiti con `pytest` (configurato in `pyproject.toml` con `testpaths = ["tests"]`).
+Automated tests of the project, run with `pytest` (configured in `pyproject.toml` with `testpaths = ["tests"]`).
 
-| File | Cosa verifica |
+| File | What it checks |
 |---|---|
-| `test_smoke.py` | L'estensione C++ si importa e la configurazione di default si legge. |
-| `test_core.py` | Core C++: energia, mosse VSHD e pull moves su casi costruiti a mano, validità delle mosse lungo una camminata casuale. |
-| `test_conformation.py` | Logica della catena: mosse valide e non valide, annullamento, tipi H/P, file JSON. |
-| `test_gui.py` | Parti di `gui.py` che non aprono finestre: conversione pixel/nodo, proteina di default, contatti e fotogrammi dell'animazione. |
-| `test_simulation.py` | REMC: scala delle temperature, parametri non validi, riproducibilità con lo stesso `seed`, energia minima, enumerazione esatta, fase `verify`. |
-| `test_policy_dataset.py` | Spazio delle azioni, chiave canonica, simmetrie, distanze dell'oracolo, file del policy dataset. |
-| `test_discriminator_dataset.py` | Energie, trappole cinetiche, fasce, bilanciamento 1:1, duplicati, split per sequenza, riproducibilità. |
-| `test_discriminator_model.py` | Feature, assenza di campi che rivelano la risposta, invarianza per simmetrie, AUROC, salvataggio e rilettura del modello, riproducibilità. Saltato se `torch` non è installato. |
-| `test_discriminator_score.py` | Fase `discriminator_score`: lettura e controllo della conformazione in ingresso, uscite del giudizio, fase da riga di comando. Saltato se mancano `torch` o `tkinter`. |
-| `test_folding_path.py` | Percorso verso lo stato nativo: ogni mossa riduce la distanza di uno, termina in un nativo, è deterministico. |
+| `test_smoke.py` | The C++ extension imports and the default configuration can be read. |
+| `test_core.py` | C++ core: energy, VSHD moves and pull moves on hand-built cases, validity of moves along a random walk. |
+| `test_conformation.py` | Chain logic: valid and invalid moves, undo, H/P types, JSON files. |
+| `test_gui.py` | Parts of `gui.py` that do not open windows: pixel/node conversion, default protein, contacts and animation frames. |
+| `test_simulation.py` | REMC: temperature ladder, invalid parameters, reproducibility with the same `seed`, minimum energy, exact enumeration, `verify` phase. |
+| `test_policy_dataset.py` | Action space, canonical key, symmetries, oracle distances, policy dataset files. |
+| `test_discriminator_dataset.py` | Energies, kinetic traps, tiers, 1:1 balancing, duplicates, split by sequence, reproducibility. |
+| `test_discriminator_model.py` | Features, absence of fields that leak the answer, invariance under symmetries, AUROC, saving and reloading the model, reproducibility. Skipped if `torch` is not installed. |
+| `test_discriminator_score.py` | `discriminator_score` phase: reading and checking the input conformation, judgment outputs, command-line phase. Skipped if `torch` or `tkinter` is missing. |
+| `test_folding_path.py` | Path to the native state: each move reduces the distance by one, it ends in a native state, it is deterministic. |
 
-## Uso
+## Usage
 
-Dalla radice del progetto, con le dipendenze `dev` (e `ml` per i test del modello) installate:
+From the project root, with the `dev` dependencies (and `ml` for the model tests) installed:
 
 ```bash
 pytest

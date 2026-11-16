@@ -1,25 +1,25 @@
 # `data/`
 
-Dati letti e prodotti dalla pipeline. I percorsi effettivi sono quelli di `[protein]` e `[output]` in [`config/default.toml`](../config/default.toml).
+Data read and produced by the pipeline. The actual paths are those in `[protein]` and `[output]` in [`config/default.toml`](../config/default.toml).
 
-## `input/` (versionata)
+## `input/` (versioned)
 
-| File | Prodotto da | Letto da |
+| File | Produced by | Read by |
 |---|---|---|
-| `initial_conformation.json` | fase `gui` | fase `simulate` |
+| `initial_conformation.json` | `gui` phase | `simulate` phase |
 
-È un oggetto JSON con due chiavi: `sequence`, stringa di `H` e `P`, e `coordinates`, lista di coppie `[x, y]` in ordine di catena (la coppia `i` è la posizione del residuo `i`).
+It is a JSON object with two keys: `sequence`, a string of `H` and `P`, and `coordinates`, a list of `[x, y]` pairs in chain order (pair `i` is the position of residue `i`).
 
-## `output/` (non versionata, rigenerabile)
+## `output/` (not versioned, regenerable)
 
-| Percorso | Prodotto da | Contenuto |
+| Path | Produced by | Contents |
 |---|---|---|
-| `datasets/discriminator_dataset/` | `discriminator_dataset` | `train.csv`, `val.csv`, `test.csv` (una riga per esempio: `seq_id`, `sequence`, `split`, `label`, `energy`, `e_min`, `gap`, `tier`, `kinetic_trap`, `native_overlap`, `turns`, `coordinates`, `key`), `sequences.csv`, `provenance.csv`, `meta.json`, `report.txt` |
-| `models/discriminator/` | `discriminator_train` | `discriminator.pt` (pesi e iperparametri), `metrics.json`, `report.txt`, `history.csv`, `test_predictions.csv` |
-| `animations/` | `discriminator_score` (pulsante **Save GIF…**) | GIF `folding_<sequenza>.gif` |
-| `native_conformation.json` | `simulate` | conformazione a energia minima, con la chiave `energy` |
-| `datasets/policy_dataset/` | `policy_dataset` | `meta.json`, `sequences.npz`, un `.npz` per split, `trajectories.csv` |
+| `datasets/discriminator_dataset/` | `discriminator_dataset` | `train.csv`, `val.csv`, `test.csv` (one row per example: `seq_id`, `sequence`, `split`, `label`, `energy`, `e_min`, `gap`, `tier`, `kinetic_trap`, `native_overlap`, `turns`, `coordinates`, `key`), `sequences.csv`, `provenance.csv`, `meta.json`, `report.txt` |
+| `models/discriminator/` | `discriminator_train` | `discriminator.pt` (weights and hyperparameters), `metrics.json`, `report.txt`, `history.csv`, `test_predictions.csv` |
+| `animations/` | `discriminator_score` (**Save GIF…** button) | GIF `folding_<sequence>.gif` |
+| `native_conformation.json` | `simulate` | minimum-energy conformation, with the `energy` key |
+| `datasets/policy_dataset/` | `policy_dataset` | `meta.json`, `sequences.npz`, one `.npz` per split, `trajectories.csv` |
 
-Campi come `energy`, `e_min`, `gap` e `tier` contengono la risposta e **non** vanno usati come feature: l'input del modello è solo sequenza e conformazione.
+Fields such as `energy`, `e_min`, `gap` and `tier` contain the answer and must **not** be used as features: the model's input is only the sequence and the conformation.
 
-I file `.gitkeep` sono vuoti: servono a far conservare le cartelle a git.
+The `.gitkeep` files are empty: they make git keep the folders.
